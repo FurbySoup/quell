@@ -231,54 +231,79 @@ impl Proxy {
                             // Filter dangerous sequences before output
                             let filtered = output_filter.filter(&data);
 
-                            // Feed sync detector BEFORE writing to stdout.
-                            // This lets us intercept full-redraw sync blocks and
-                            // strip the clear-screen sequence that causes scroll jumping.
-                            let events = detector.process(filtered);
+                            // Two-pass approach:
+                            // 1. Write filtered data to stdout immediately (preserves
+                            //    original BSU/ESU timing for normal sync blocks)
+                            // 2. Feed sync detector to identify full-redraw blocks
+                            //    and strip clear-screen sequences retroactively
+                            //
+                            // For full-redraw sync blocks, we can't prevent the
+                            // initial write, so we use an alternative approach:
+                            // detect the full-redraw pattern and overwrite the
+                            // screen position after the block completes.
 
-                            let mut write_error = false;
+                            // Feed sync detector first to check for full redraws.
+                            // Clone filtered to avoid borrow issues — the detector
+                            // needs to process the same data we write to stdout.
+                            let filtered_owned = filtered.to_vec();
+                            let events = detector.process(&filtered_owned);
+
+                            // Check if any event in this chunk is a full-redraw sync block
+                            let mut has_full_redraw = false;
+                            for event in &events {
+                                if let SyncEvent::SyncBlock { is_full_redraw: true, .. } = event {
+                                    has_full_redraw = true;
+                                }
+                            }
+
+                            if has_full_redraw {
+                                // Full-redraw detected — write modified data with
+                                // clear-screen stripped, wrapped in BSU/ESU
+                                for event in &events {
+                                    match event {
+                                        SyncEvent::PassThrough(bytes) => {
+                                            if let Err(e) = raw_write_all(stdout_handle, bytes) {
+                                                error!(error = %e, "failed to write to stdout");
+                                                break;
+                                            }
+                                        }
+                                        SyncEvent::SyncBlock { data: block_data, is_full_redraw } => {
+                                            let output_data = if *is_full_redraw {
+                                                debug!(
+                                                    block_size = block_data.len(),
+                                                    "stripping clear-screen from full-redraw sync block"
+                                                );
+                                                strip_clear_screen(block_data)
+                                            } else {
+                                                block_data.clone()
+                                            };
+
+                                            // Re-wrap in BSU/ESU for atomic display
+                                            let _ = raw_write_all(stdout_handle, b"\x1b[?2026h");
+                                            if let Err(e) = raw_write_all(stdout_handle, &output_data) {
+                                                error!(error = %e, "failed to write sync block");
+                                                break;
+                                            }
+                                            let _ = raw_write_all(stdout_handle, b"\x1b[?2026l");
+                                        }
+                                    }
+                                }
+                            } else {
+                                // No full-redraw — write original filtered data directly.
+                                // This preserves the original BSU/ESU timing from ConPTY.
+                                if let Err(e) = raw_write_all(stdout_handle, &filtered_owned) {
+                                    error!(error = %e, "failed to write to stdout");
+                                    break;
+                                }
+                            }
+
+                            // Feed history from detector events
                             for event in &events {
                                 match event {
                                     SyncEvent::PassThrough(bytes) => {
-                                        // Normal data — write directly to stdout
-                                        if let Err(e) = raw_write_all(stdout_handle, bytes) {
-                                            error!(error = %e, "failed to write to stdout");
-                                            write_error = true;
-                                            break;
-                                        }
                                         history.push(bytes, HistoryEventType::Output);
                                     }
                                     SyncEvent::SyncBlock { data: block_data, is_full_redraw } => {
-                                        // Write sync block to stdout, stripping clear-screen
-                                        // from full redraws to prevent scroll position reset
-                                        let output_data = if *is_full_redraw {
-                                            debug!(
-                                                block_size = block_data.len(),
-                                                "stripping clear-screen from full-redraw sync block"
-                                            );
-                                            strip_clear_screen(block_data)
-                                        } else {
-                                            block_data.clone()
-                                        };
-
-                                        // Re-wrap in BSU/ESU so the outer terminal
-                                        // processes the update atomically
-                                        if let Err(e) = raw_write_all(stdout_handle, b"\x1b[?2026h") {
-                                            error!(error = %e, "failed to write BSU");
-                                            write_error = true;
-                                            break;
-                                        }
-                                        if let Err(e) = raw_write_all(stdout_handle, &output_data) {
-                                            error!(error = %e, "failed to write sync block");
-                                            write_error = true;
-                                            break;
-                                        }
-                                        if let Err(e) = raw_write_all(stdout_handle, b"\x1b[?2026l") {
-                                            error!(error = %e, "failed to write ESU");
-                                            write_error = true;
-                                            break;
-                                        }
-
                                         if *is_full_redraw {
                                             history.insert_boundary(HistoryEventType::FullRedrawBoundary);
                                         }
@@ -293,11 +318,8 @@ impl Proxy {
                                     }
                                 }
                             }
-                            if write_error {
-                                break;
-                            }
 
-                            total_bytes += filtered.len() as u64;
+                            total_bytes += filtered_owned.len() as u64;
                             chunk_count += 1;
                         }
                         Err(_) => {

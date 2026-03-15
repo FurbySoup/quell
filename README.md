@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/FurbySoup/quell/actions/workflows/ci.yml/badge.svg)](https://github.com/FurbySoup/quell/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Windows](https://img.shields.io/badge/platform-Windows-0078D4?logo=windows)](https://github.com/FurbySoup/quell/releases)
+[![Rust](https://img.shields.io/badge/built%20with-Rust-dea584?logo=rust)](https://www.rust-lang.org/)
 
 **Windows-native terminal proxy that eliminates scroll-jumping for AI CLI tools.**
 
@@ -103,8 +105,6 @@ quell is currently a CLI proxy (Phase 1). Future phases:
 
 - **Phase 2:** Standalone terminal (Tauri + xterm.js) with structured output, collapsible sections, tabs, accessibility
 - **Phase 3:** Session persistence, split panes, search, community release
-
-See [ROADMAP.md](ROADMAP.md) for details.
 
 ## License
 
