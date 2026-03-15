@@ -231,38 +231,74 @@ impl Proxy {
                             // Filter dangerous sequences before output
                             let filtered = output_filter.filter(&data);
 
-                            // Write filtered data to stdout via raw WriteFile
-                            // (Rust's console stdout rejects non-UTF-8 bytes)
-                            if let Err(e) = raw_write_all(stdout_handle, &filtered) {
-                                error!(error = %e, "failed to write to stdout");
-                                break;
-                            }
+                            // Feed sync detector BEFORE writing to stdout.
+                            // This lets us intercept full-redraw sync blocks and
+                            // strip the clear-screen sequence that causes scroll jumping.
+                            let events = detector.process(filtered);
 
-                            total_bytes += filtered.len() as u64;
-                            chunk_count += 1;
-
-                            // Feed pipeline with filtered data
-                            let events = detector.process(&filtered);
-                            for event in events {
+                            let mut write_error = false;
+                            for event in &events {
                                 match event {
                                     SyncEvent::PassThrough(bytes) => {
+                                        // Normal data — write directly to stdout
+                                        if let Err(e) = raw_write_all(stdout_handle, bytes) {
+                                            error!(error = %e, "failed to write to stdout");
+                                            write_error = true;
+                                            break;
+                                        }
                                         history.push(bytes, HistoryEventType::Output);
                                     }
                                     SyncEvent::SyncBlock { data: block_data, is_full_redraw } => {
-                                        if is_full_redraw {
+                                        // Write sync block to stdout, stripping clear-screen
+                                        // from full redraws to prevent scroll position reset
+                                        let output_data = if *is_full_redraw {
+                                            debug!(
+                                                block_size = block_data.len(),
+                                                "stripping clear-screen from full-redraw sync block"
+                                            );
+                                            strip_clear_screen(block_data)
+                                        } else {
+                                            block_data.clone()
+                                        };
+
+                                        // Re-wrap in BSU/ESU so the outer terminal
+                                        // processes the update atomically
+                                        if let Err(e) = raw_write_all(stdout_handle, b"\x1b[?2026h") {
+                                            error!(error = %e, "failed to write BSU");
+                                            write_error = true;
+                                            break;
+                                        }
+                                        if let Err(e) = raw_write_all(stdout_handle, &output_data) {
+                                            error!(error = %e, "failed to write sync block");
+                                            write_error = true;
+                                            break;
+                                        }
+                                        if let Err(e) = raw_write_all(stdout_handle, b"\x1b[?2026l") {
+                                            error!(error = %e, "failed to write ESU");
+                                            write_error = true;
+                                            break;
+                                        }
+
+                                        if *is_full_redraw {
                                             history.insert_boundary(HistoryEventType::FullRedrawBoundary);
                                         }
-                                        history.push(&block_data, HistoryEventType::SyncBlock);
+                                        history.push(block_data, HistoryEventType::SyncBlock);
 
                                         let _ = self.event_tx.try_send(
                                             ProxyEvent::SyncBlockComplete {
                                                 size_bytes: block_data.len(),
-                                                is_full_redraw,
+                                                is_full_redraw: *is_full_redraw,
                                             }
                                         );
                                     }
                                 }
                             }
+                            if write_error {
+                                break;
+                            }
+
+                            total_bytes += filtered.len() as u64;
+                            chunk_count += 1;
                         }
                         Err(_) => {
                             info!("output channel closed");
@@ -563,6 +599,79 @@ fn run_pipe_input_loop(
                 break;
             }
         }
+    }
+}
+
+/// Strip CSI 2J (erase display) and CSI H (cursor home) from a sync block.
+/// These sequences cause the terminal to reset scroll position. By removing them
+/// from full-redraw sync blocks, the content update happens without scroll jumping.
+fn strip_clear_screen(data: &[u8]) -> Vec<u8> {
+    use memchr::memmem;
+
+    let clear_screen = b"\x1b[2J";
+    let cursor_home = b"\x1b[H";
+
+    let mut result = data.to_vec();
+
+    // Strip all occurrences of CSI 2J
+    while let Some(pos) = memmem::find(&result, clear_screen) {
+        result.drain(pos..pos + clear_screen.len());
+    }
+
+    // Strip CSI H (cursor home) only at position 0 — it's often paired with
+    // the clear screen. Don't strip cursor-home elsewhere as it may be part
+    // of legitimate content positioning.
+    if result.starts_with(cursor_home) {
+        result.drain(..cursor_home.len());
+    }
+
+    result
+}
+
+#[cfg(test)]
+mod strip_tests {
+    use super::*;
+
+    #[test]
+    fn test_strip_clear_screen_and_cursor_home() {
+        let input = b"\x1b[2J\x1b[Hscreen content here";
+        let result = strip_clear_screen(input);
+        assert_eq!(result, b"screen content here");
+    }
+
+    #[test]
+    fn test_strip_clear_screen_only() {
+        let input = b"\x1b[2Jcontent";
+        let result = strip_clear_screen(input);
+        assert_eq!(result, b"content");
+    }
+
+    #[test]
+    fn test_no_clear_screen_unchanged() {
+        let input = b"\x1b[31mred text\x1b[0m";
+        let result = strip_clear_screen(input);
+        assert_eq!(result, input.to_vec());
+    }
+
+    #[test]
+    fn test_cursor_home_mid_content_preserved() {
+        // CSI H in the middle of content should be preserved
+        let input = b"before\x1b[Hafter";
+        let result = strip_clear_screen(input);
+        assert_eq!(result, b"before\x1b[Hafter");
+    }
+
+    #[test]
+    fn test_multiple_clear_screens_stripped() {
+        let input = b"\x1b[2Jfirst\x1b[2Jsecond";
+        let result = strip_clear_screen(input);
+        assert_eq!(result, b"firstsecond");
+    }
+
+    #[test]
+    fn test_empty_input() {
+        let result = strip_clear_screen(b"");
+        assert!(result.is_empty());
     }
 }
 
