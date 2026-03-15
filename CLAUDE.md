@@ -6,26 +6,7 @@ A Windows-native terminal proxy (and eventually standalone terminal) for AI CLI 
 
 ## Research
 
-Prior research lives in `research/` organized by topic. **Before designing or implementing a feature, check the research index** at `research/INDEX.md` for relevant findings, competitive analysis, and design recommendations.
-
-Key topics covered:
-- **Problem & root cause** — scroll-jumping analysis, community pain points with upvote data
-- **ConPTY** — Windows API details, known issues, performance benchmarks
-- **Existing solutions** — claude-chill architecture deep dive, Unix-only tools
-- **Synchronized output** — DEC Mode 2026 protocol and terminal support
-- **Architecture** — recommended design, component details, implementation roadmap
-- **UI frameworks** — Tauri+xterm.js vs alternatives evaluation
-- **Session management** — tabs, panes, forking, naming (Warp/WezTerm/Kitty/Zellij patterns)
-- **Keyboard input** — Shift+Enter problem, Kitty protocol, key translation
-- **Output layout** — structured stream vs multi-pane, progressive disclosure
-- **Navigation** — conversation turn jump-to, history browsing
-- **Links & URLs** — OSC 8 hyperlinks, security (CVEs), file path detection
-- **Accessibility** — WCAG 2.1 AA, screen readers, CVD support
-- **Progress visualization** — spinner timing, status bar design
-- **User personas** — 5 personas with feature priority matrix
-- **Competitive landscape** — narrowing window analysis, Phase 2 moat
-- **Privacy & trust** — threat model, escape sequence allow/block lists, trust communication
-- **Feature priorities** — prioritized feature tables for all three phases
+Prior research lives in `research/` (gitignored, local only) organized by topic. Check `research/INDEX.md` for the full index.
 
 ## Architecture
 

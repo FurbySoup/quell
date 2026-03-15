@@ -10,9 +10,13 @@ Thumbs.db
 .vscode/
 *.iml
 
-# Logs (keep structure, ignore contents)
-logs/*.log
-!logs/.gitkeep
+# Logs
+logs/
+
+# Internal docs (not public)
+research/
+ROADMAP.md
+testing-screenshots/
 
 # Build artifacts
 *.exe
