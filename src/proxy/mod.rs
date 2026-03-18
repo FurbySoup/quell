@@ -28,7 +28,10 @@
 
 pub mod events;
 pub mod key_translator;
+pub mod output_sink;
 pub mod render_coalescer;
+
+pub use output_sink::OutputSink;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -268,10 +271,20 @@ impl Proxy {
                                             }
                                         }
                                         SyncEvent::SyncBlock { data: block_data, is_full_redraw } => {
+                                            // Strip clear-screen from ALL sync blocks when
+                                            // a full redraw is present in this chunk. Even
+                                            // non-full-redraw blocks shouldn't clear the
+                                            // host terminal's screen.
                                             let output_data = if *is_full_redraw {
                                                 debug!(
                                                     block_size = block_data.len(),
                                                     "stripping clear-screen from full-redraw sync block"
+                                                );
+                                                strip_clear_screen(block_data)
+                                            } else if memchr::memmem::find(block_data, b"\x1b[2J").is_some() {
+                                                debug!(
+                                                    block_size = block_data.len(),
+                                                    "stripping clear-screen from non-full-redraw sync block"
                                                 );
                                                 strip_clear_screen(block_data)
                                             } else {
@@ -624,14 +637,15 @@ fn run_pipe_input_loop(
     }
 }
 
-/// Strip CSI 2J (erase display) and CSI H (cursor home) from a sync block.
+/// Strip CSI 2J (erase display) and cursor-home sequences from a sync block.
 /// These sequences cause the terminal to reset scroll position. By removing them
 /// from full-redraw sync blocks, the content update happens without scroll jumping.
+///
+/// Handles all cursor-home variants: ESC[H, ESC[;H, ESC[1;1H, ESC[1H
 fn strip_clear_screen(data: &[u8]) -> Vec<u8> {
     use memchr::memmem;
 
     let clear_screen = b"\x1b[2J";
-    let cursor_home = b"\x1b[H";
 
     let mut result = data.to_vec();
 
@@ -640,11 +654,19 @@ fn strip_clear_screen(data: &[u8]) -> Vec<u8> {
         result.drain(pos..pos + clear_screen.len());
     }
 
-    // Strip CSI H (cursor home) only at position 0 — it's often paired with
-    // the clear screen. Don't strip cursor-home elsewhere as it may be part
-    // of legitimate content positioning.
-    if result.starts_with(cursor_home) {
-        result.drain(..cursor_home.len());
+    // Strip cursor-home variants only at position 0 — they're often paired with
+    // clear screen. Don't strip cursor-home elsewhere as it may be part of
+    // legitimate content positioning.
+    for pattern in &[
+        &b"\x1b[1;1H"[..],
+        &b"\x1b[;H"[..],
+        &b"\x1b[1H"[..],
+        &b"\x1b[H"[..],
+    ] {
+        if result.starts_with(pattern) {
+            result.drain(..pattern.len());
+            break;
+        }
     }
 
     result
@@ -694,6 +716,27 @@ mod strip_tests {
     fn test_empty_input() {
         let result = strip_clear_screen(b"");
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_strip_cursor_home_variant_1_1() {
+        let input = b"\x1b[2J\x1b[1;1Hscreen content";
+        let result = strip_clear_screen(input);
+        assert_eq!(result, b"screen content");
+    }
+
+    #[test]
+    fn test_strip_cursor_home_variant_semicolon() {
+        let input = b"\x1b[2J\x1b[;Hscreen content";
+        let result = strip_clear_screen(input);
+        assert_eq!(result, b"screen content");
+    }
+
+    #[test]
+    fn test_strip_cursor_home_variant_1() {
+        let input = b"\x1b[2J\x1b[1Hscreen content";
+        let result = strip_clear_screen(input);
+        assert_eq!(result, b"screen content");
     }
 }
 

@@ -146,10 +146,18 @@ impl SyncBlockDetector {
         events
     }
 
-    /// Check if a sync block contains a full-screen redraw (CLEAR_SCREEN + CURSOR_HOME)
+    /// Check if a sync block contains a full-screen redraw.
+    ///
+    /// Detects ESC[2J (clear screen) paired with any cursor-home variant:
+    /// ESC[H, ESC[;H, ESC[1;1H, ESC[1H — ConPTY uses different forms
+    /// depending on context and these are all semantically equivalent.
     fn is_full_redraw(&self, data: &[u8]) -> bool {
-        self.clear_screen_finder.find(data).is_some()
-            && self.cursor_home_finder.find(data).is_some()
+        if self.clear_screen_finder.find(data).is_none() {
+            return false;
+        }
+        // Check for any cursor-home variant
+        self.cursor_home_finder.find(data).is_some()
+            || contains_cursor_home_variant(data)
     }
 
     /// Returns whether the detector is currently inside a sync block
@@ -165,6 +173,40 @@ impl SyncBlockDetector {
             bytes_in_sync_blocks: self.bytes_in_sync_blocks,
         }
     }
+}
+
+/// Check for cursor-home variants beyond the exact `ESC[H`:
+/// `ESC[1;1H`, `ESC[;H`, `ESC[1H`
+fn contains_cursor_home_variant(data: &[u8]) -> bool {
+    // Search for ESC[ prefix then check what follows
+    let mut i = 0;
+    while i + 2 < data.len() {
+        if data[i] == 0x1b && data[i + 1] == b'[' {
+            // Parse CSI parameters to check for cursor-home variants
+            let start = i + 2;
+            let mut j = start;
+            // Consume parameter bytes (digits, semicolons)
+            while j < data.len() && (data[j].is_ascii_digit() || data[j] == b';') {
+                j += 1;
+            }
+            // Check if it ends with 'H'
+            if j < data.len() && data[j] == b'H' {
+                let params = &data[start..j];
+                // Match: ESC[H (empty), ESC[;H, ESC[1;1H, ESC[1H
+                if params.is_empty()
+                    || params == b";"
+                    || params == b"1;1"
+                    || params == b"1"
+                {
+                    return true;
+                }
+            }
+            i = j + 1;
+        } else {
+            i += 1;
+        }
+    }
+    false
 }
 
 impl Default for SyncBlockDetector {
@@ -336,5 +378,85 @@ mod tests {
         assert_eq!(metrics.sync_blocks_detected, 1);
         assert_eq!(metrics.full_redraws_detected, 1);
         assert!(metrics.bytes_in_sync_blocks > 0);
+    }
+
+    #[test]
+    fn test_full_redraw_with_cursor_home_1_1() {
+        let mut detector = SyncBlockDetector::new();
+        let mut data = Vec::new();
+        data.extend_from_slice(SYNC_START);
+        data.extend_from_slice(CLEAR_SCREEN);
+        data.extend_from_slice(b"\x1b[1;1H"); // ESC[1;1H variant
+        data.extend_from_slice(b"screen content");
+        data.extend_from_slice(SYNC_END);
+
+        let events = detector.process(&data);
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            SyncEvent::SyncBlock { is_full_redraw, .. } => {
+                assert!(is_full_redraw, "ESC[1;1H should be detected as full redraw");
+            }
+            _ => panic!("expected SyncBlock"),
+        }
+    }
+
+    #[test]
+    fn test_full_redraw_with_cursor_home_semicolon() {
+        let mut detector = SyncBlockDetector::new();
+        let mut data = Vec::new();
+        data.extend_from_slice(SYNC_START);
+        data.extend_from_slice(CLEAR_SCREEN);
+        data.extend_from_slice(b"\x1b[;H"); // ESC[;H variant
+        data.extend_from_slice(b"screen content");
+        data.extend_from_slice(SYNC_END);
+
+        let events = detector.process(&data);
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            SyncEvent::SyncBlock { is_full_redraw, .. } => {
+                assert!(is_full_redraw, "ESC[;H should be detected as full redraw");
+            }
+            _ => panic!("expected SyncBlock"),
+        }
+    }
+
+    #[test]
+    fn test_full_redraw_with_cursor_home_1() {
+        let mut detector = SyncBlockDetector::new();
+        let mut data = Vec::new();
+        data.extend_from_slice(SYNC_START);
+        data.extend_from_slice(CLEAR_SCREEN);
+        data.extend_from_slice(b"\x1b[1H"); // ESC[1H variant
+        data.extend_from_slice(b"screen content");
+        data.extend_from_slice(SYNC_END);
+
+        let events = detector.process(&data);
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            SyncEvent::SyncBlock { is_full_redraw, .. } => {
+                assert!(is_full_redraw, "ESC[1H should be detected as full redraw");
+            }
+            _ => panic!("expected SyncBlock"),
+        }
+    }
+
+    #[test]
+    fn test_cursor_position_not_home_not_full_redraw() {
+        let mut detector = SyncBlockDetector::new();
+        let mut data = Vec::new();
+        data.extend_from_slice(SYNC_START);
+        data.extend_from_slice(CLEAR_SCREEN);
+        data.extend_from_slice(b"\x1b[5;10H"); // Not cursor home
+        data.extend_from_slice(b"screen content");
+        data.extend_from_slice(SYNC_END);
+
+        let events = detector.process(&data);
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            SyncEvent::SyncBlock { is_full_redraw, .. } => {
+                assert!(!is_full_redraw, "ESC[5;10H is not cursor home");
+            }
+            _ => panic!("expected SyncBlock"),
+        }
     }
 }
