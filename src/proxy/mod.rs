@@ -301,13 +301,15 @@ impl Proxy {
                                             }
                                         }
                                         SyncEvent::SyncBlock { data: block_data, is_full_redraw } => {
-                                            let output_data = if *is_full_redraw
+                                            let is_large = block_data.len() > 10_000;
+                                            let needs_strip = *is_full_redraw
                                                 || memchr::memmem::find(block_data, b"\x1b[2J").is_some()
-                                                || block_data.len() > 10_000
-                                            {
+                                                || is_large;
+                                            let output_data = if needs_strip {
                                                 debug!(
                                                     block_size = block_data.len(),
                                                     is_full_redraw,
+                                                    is_large,
                                                     "stripping clear-screen from sync block"
                                                 );
                                                 strip_clear_screen(block_data)
@@ -315,13 +317,24 @@ impl Proxy {
                                                 block_data.clone()
                                             };
 
-                                            // Re-wrap in BSU/ESU for atomic display
-                                            let _ = raw_write_all(stdout_handle, b"\x1b[?2026h");
-                                            if let Err(e) = raw_write_all(stdout_handle, &output_data) {
-                                                error!(error = %e, "failed to write sync block");
-                                                break;
+                                            if *is_full_redraw || is_large {
+                                                // Large/full-redraw blocks: write WITHOUT
+                                                // BSU/ESU. BSU/ESU causes the terminal to
+                                                // snap viewport to the active area on ESU,
+                                                // pulling the user away from scrollback.
+                                                if let Err(e) = raw_write_all(stdout_handle, &output_data) {
+                                                    error!(error = %e, "failed to write sync block");
+                                                    break;
+                                                }
+                                            } else {
+                                                // Small non-full-redraw: re-wrap in BSU/ESU
+                                                let _ = raw_write_all(stdout_handle, b"\x1b[?2026h");
+                                                if let Err(e) = raw_write_all(stdout_handle, &output_data) {
+                                                    error!(error = %e, "failed to write sync block");
+                                                    break;
+                                                }
+                                                let _ = raw_write_all(stdout_handle, b"\x1b[?2026l");
                                             }
-                                            let _ = raw_write_all(stdout_handle, b"\x1b[?2026l");
                                         }
                                     }
                                 }
