@@ -29,7 +29,7 @@ pub struct Cli {
     #[arg(long, env = "QUELL_LOG_FILE")]
     pub log_file: Option<String>,
 
-    /// Config file path (defaults to ~/.config/quell/config.toml)
+    /// Config file path (defaults to %APPDATA%\quell\config.toml)
     #[arg(long, short)]
     pub config: Option<String>,
 

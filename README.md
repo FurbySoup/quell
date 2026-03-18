@@ -67,11 +67,11 @@ cargo build --release
 quell works out of the box with no configuration. Optional settings can be placed in `%APPDATA%\quell\config.toml`:
 
 ```toml
-[history]
-max_lines = 100_000        # Scrollback buffer size
-
-[logging]
-level = "info"             # error, warn, info, debug, trace
+render_delay_ms = 5        # Normal output coalescing (ms)
+sync_delay_ms = 50         # Sync block coalescing (ms)
+history_lines = 100000     # Scrollback buffer size
+log_level = "info"         # trace, debug, info, warn, error
+log_file = "C:\\logs\\quell.log"  # Optional — logs to stderr if omitted
 ```
 
 CLI flags override config file values. See `quell --help` for all options.
