@@ -15,10 +15,14 @@ pub struct OutputFilter {
     state: FilterState,
     /// Output buffer for the current filter() call
     output: Vec<u8>,
+    /// Total bytes processed — used to skip ESC[2J stripping during
+    /// initial display setup (first ~64KB of output)
+    total_bytes_processed: u64,
     /// Metrics
     osc52_stripped: u64,
     osc50_stripped: u64,
     c1_bytes_stripped: u64,
+    clear_screen_stripped: u64,
     queries_stripped: u64,
     titles_sanitized: u64,
     links_stripped: u64,
@@ -52,9 +56,11 @@ impl OutputFilter {
         Self {
             state: FilterState::Normal,
             output: Vec::with_capacity(8192),
+            total_bytes_processed: 0,
             osc52_stripped: 0,
             osc50_stripped: 0,
             c1_bytes_stripped: 0,
+            clear_screen_stripped: 0,
             queries_stripped: 0,
             titles_sanitized: 0,
             links_stripped: 0,
@@ -64,6 +70,7 @@ impl OutputFilter {
     /// Filter a chunk of output. Returns the filtered bytes.
     /// Handles sequences split across chunks via internal state.
     pub fn filter(&mut self, data: &[u8]) -> &[u8] {
+        self.total_bytes_processed += data.len() as u64;
         self.output.clear();
         self.output.reserve(data.len());
 
@@ -212,8 +219,8 @@ impl OutputFilter {
         &self.output
     }
 
-    /// Check if a CSI sequence is a terminal query that should be blocked.
-    fn is_blocked_csi(&self, buf: &[u8]) -> bool {
+    /// Check if a CSI sequence should be blocked.
+    fn is_blocked_csi(&mut self, buf: &[u8]) -> bool {
         if buf.is_empty() {
             return false;
         }
@@ -233,6 +240,29 @@ impl OutputFilter {
             b'p' => params.ends_with(b"$") && params.starts_with(b"?"),
             // Kitty keyboard query: CSI ? u
             b'u' => params == b"?",
+            // CSI 2 J — erase entire display. Stripped after initial
+            // display setup (~64KB) to prevent scroll jumping. The
+            // first few clear-screens are needed for the child process
+            // to set up its UI; after that they're redundant repaints
+            // that reset the viewport position.
+            // CSI 3 J — erase scrollback buffer. Always stripped — this
+            // destroys the user's scroll history and snaps the viewport.
+            b'J' if params == b"3" || (params == b"2" && self.total_bytes_processed > 65_536) => {
+                self.clear_screen_stripped += 1;
+                if self.clear_screen_stripped <= 5 {
+                    debug!(
+                        total_bytes = self.total_bytes_processed,
+                        count = self.clear_screen_stripped,
+                        variant = ?params,
+                        "stripping clear-screen/scrollback"
+                    );
+                }
+                true
+            }
+            // Note: cursor-home (ESC[H etc.) cannot be stripped — it's
+            // needed for correct content positioning during redraws.
+            // Stripping it causes content duplication (appended instead
+            // of overwriting the active screen area).
             _ => false,
         }
     }

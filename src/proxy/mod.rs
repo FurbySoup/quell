@@ -267,85 +267,18 @@ impl Proxy {
                             // detect the full-redraw pattern and overwrite the
                             // screen position after the block completes.
 
-                            // Feed sync detector first to check for full redraws.
-                            // Clone filtered to avoid borrow issues — the detector
-                            // needs to process the same data we write to stdout.
+                            // Write filtered data directly to stdout.
+                            // ESC[2J stripping is handled by the output filter
+                            // (after initial 64KB setup). All other sync block
+                            // timing (BSU/ESU) is preserved from ConPTY.
                             let filtered_owned = filtered.to_vec();
-                            let events = detector.process(&filtered_owned);
-
-                            // Check if any sync block needs scroll-jump protection.
-                            // A block needs protection if:
-                            // 1. It's detected as a full-redraw (ESC[2J + cursor-home), OR
-                            // 2. It contains ESC[2J (clear screen), OR
-                            // 3. It's large (>10KB) — these are full-screen repaints
-                            //    even without explicit clear (e.g., session resume)
-                            let needs_protection = events.iter().any(|e| {
-                                if let SyncEvent::SyncBlock { data: block_data, is_full_redraw } = e {
-                                    *is_full_redraw
-                                        || memchr::memmem::find(block_data, b"\x1b[2J").is_some()
-                                        || block_data.len() > 10_000
-                                } else {
-                                    false
-                                }
-                            });
-
-                            if needs_protection {
-                                // Write events individually, stripping scroll-jump
-                                // sequences from sync blocks
-                                for event in &events {
-                                    match event {
-                                        SyncEvent::PassThrough(bytes) => {
-                                            if let Err(e) = raw_write_all(stdout_handle, bytes) {
-                                                error!(error = %e, "failed to write to stdout");
-                                                break;
-                                            }
-                                        }
-                                        SyncEvent::SyncBlock { data: block_data, is_full_redraw } => {
-                                            let is_large = block_data.len() > 10_000;
-                                            let needs_strip = *is_full_redraw
-                                                || memchr::memmem::find(block_data, b"\x1b[2J").is_some()
-                                                || is_large;
-                                            let output_data = if needs_strip {
-                                                debug!(
-                                                    block_size = block_data.len(),
-                                                    is_full_redraw,
-                                                    is_large,
-                                                    "stripping clear-screen from sync block"
-                                                );
-                                                strip_clear_screen(block_data)
-                                            } else {
-                                                block_data.clone()
-                                            };
-
-                                            if *is_full_redraw || is_large {
-                                                // Large/full-redraw blocks: write WITHOUT
-                                                // BSU/ESU. BSU/ESU causes the terminal to
-                                                // snap viewport to the active area on ESU,
-                                                // pulling the user away from scrollback.
-                                                if let Err(e) = raw_write_all(stdout_handle, &output_data) {
-                                                    error!(error = %e, "failed to write sync block");
-                                                    break;
-                                                }
-                                            } else {
-                                                // Small non-full-redraw: re-wrap in BSU/ESU
-                                                let _ = raw_write_all(stdout_handle, b"\x1b[?2026h");
-                                                if let Err(e) = raw_write_all(stdout_handle, &output_data) {
-                                                    error!(error = %e, "failed to write sync block");
-                                                    break;
-                                                }
-                                                let _ = raw_write_all(stdout_handle, b"\x1b[?2026l");
-                                            }
-                                        }
-                                    }
-                                }
-                            } else {
-                                // No protection needed — write original filtered data
-                                // directly, preserving original BSU/ESU timing from ConPTY.
-                                if let Err(e) = raw_write_all(stdout_handle, &filtered_owned) {
-                                    error!(error = %e, "failed to write to stdout");
-                                    break;
-                                }
+                            if let Err(e) = raw_write_all(stdout_handle, &filtered_owned) {
+                                error!(error = %e, "failed to write to stdout");
+                                break;
                             }
+
+                            // Feed sync detector for history/metrics
+                            let events = detector.process(&filtered_owned);
 
                             // Feed history from detector events
                             for event in &events {
