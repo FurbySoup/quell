@@ -259,10 +259,6 @@ impl OutputFilter {
                 }
                 true
             }
-            // Note: cursor-home (ESC[H etc.) cannot be stripped — it's
-            // needed for correct content positioning during redraws.
-            // Stripping it causes content duplication (appended instead
-            // of overwriting the active screen area).
             _ => false,
         }
     }
