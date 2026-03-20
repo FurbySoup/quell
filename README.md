@@ -123,8 +123,7 @@ See [SECURITY.md](SECURITY.md) for the full threat model.
 
 ## Roadmap
 
-quell is currently a CLI proxy (Phase 1). Future phases:
-
+- **Phase 1: CLI proxy** — scroll stability, security filtering, Shift+Enter, startup banner, friendly errors, `--verbose` diagnostics
 - **Phase 2:** Standalone terminal (Tauri + xterm.js) with structured output, collapsible sections, tabs, accessibility
 - **Phase 3:** Session persistence, split panes, search, community release
 
