@@ -106,7 +106,7 @@ These fire automatically — no manual action needed:
 | `gitignore_check.py` | PostToolUse (Write/Edit) | Warns if new files look sensitive, like build artifacts, or contain secrets |
 | `session_git_status.py` | SessionStart | Injects repo state (unpushed commits, stale branches) as context |
 | `push_reminder.py` | Stop | Warns about unpushed commits when Claude finishes responding |
-| `commit_discipline.py` | PreToolUse (Bash) | Blocks direct commits to master, force push, and reset --hard |
+| `commit_discipline.py` | PreToolUse (Bash) | Blocks pushing Phase 2 files to public origin, force push, and reset --hard |
 
 ## Key Dependencies
 
@@ -175,6 +175,6 @@ The `windows` crate (0.59) wraps Win32 APIs differently from the `winapi` crate.
 
 ## Project Phases
 
-- **Phase 1:** CLI proxy (current) — runs in any Windows terminal, eliminates scroll-jumping. Permanent product for power users.
-- **Phase 2:** Standalone Tauri + xterm.js terminal with structured output, tabs, accessibility, themes
+- **Phase 1:** CLI proxy (shipped, public) — runs in any Windows terminal, eliminates scroll-jumping. Permanent product for power users.
+- **Phase 2:** Standalone Tauri + xterm.js terminal (LOCAL ONLY — not pushed to GitHub until stable release). `commit_discipline.py` hook enforces this.
 - **Phase 3:** Session persistence, search, split panes, community release, auto-update
