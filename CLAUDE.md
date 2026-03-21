@@ -103,6 +103,7 @@ These fire automatically — no manual action needed:
 | `branch_phase_check.py` | PreToolUse (Edit/Write) | Warns if editing Phase 2 files on master or vice versa |
 | `pre_commit_gate.py` | PreToolUse (Bash) | Blocks `git commit` if cargo test or clippy fails |
 | `systematic_debugging.py` | Stop | Detects circular debugging (repeated corrections) and suggests structured approach |
+| `gitignore_check.py` | PostToolUse (Write/Edit) | Warns if new files look sensitive, like build artifacts, or contain secrets |
 
 ## Key Dependencies
 

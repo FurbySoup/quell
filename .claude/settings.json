@@ -54,6 +54,18 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:\\Python314\\python.exe \".claude/hooks/gitignore_check.py\"",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   }
 }
