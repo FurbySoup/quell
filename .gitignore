@@ -12,6 +12,9 @@ Thumbs.db
 
 # Logs
 logs/
+*.log.*
+scroll-debug*.log*
+hook_err.txt
 
 # Internal docs (not public)
 research/
@@ -26,3 +29,11 @@ testing-screenshots/
 # Environment
 .env
 .env.local
+
+# Claude Code worktrees (temporary agent workspaces)
+.claude/worktrees/
+
+# Phase 2 GUI (Node/frontend)
+node_modules/
+dist/
+.vite/

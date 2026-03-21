@@ -1,8 +1,11 @@
+[workspace]
+members = [".", "cli"]
+
 [package]
 name = "quell"
 version = "0.1.1"
 edition = "2024"
-description = "Windows-native terminal proxy for AI CLI tools — eliminates scroll-jumping and flicker"
+description = "Windows-native terminal proxy engine for AI CLI tools — eliminates scroll-jumping and flicker"
 license = "MIT"
 repository = "https://github.com/FurbySoup/quell"
 
@@ -14,10 +17,6 @@ recording = []
 [lib]
 name = "quell"
 path = "src/lib.rs"
-
-[[bin]]
-name = "quell"
-path = "src/main.rs"
 
 [dependencies]
 # VT100 terminal emulator — core of the differential rendering engine
@@ -31,9 +30,6 @@ vte = "0.15"
 
 # Escape sequence parser for history filtering
 termwiz = "0.22"
-
-# CLI argument parsing
-clap = { version = "4", features = ["derive", "env"] }
 
 # Inter-thread communication
 crossbeam-channel = "0.5"

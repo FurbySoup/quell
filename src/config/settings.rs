@@ -2,9 +2,19 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
-use super::Cli;
+/// Runtime overrides for configuration (from CLI args, GUI settings, etc.)
+/// This decouples the shared library from clap / any specific frontend.
+#[derive(Debug, Default)]
+pub struct ConfigOverrides {
+    pub config_path: Option<String>,
+    pub render_delay_ms: Option<u64>,
+    pub sync_delay_ms: Option<u64>,
+    pub history_lines: Option<usize>,
+    pub log_level: Option<String>,
+    pub log_file: Option<String>,
+}
 
-/// Application configuration, merged from file + CLI args
+/// Application configuration, merged from file + runtime overrides
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     /// Render delay for normal output (milliseconds)
@@ -46,12 +56,12 @@ struct FileConfig {
 }
 
 impl AppConfig {
-    /// Load configuration: file defaults < config file < CLI args
-    pub fn load(cli: &Cli) -> Result<Self> {
+    /// Load configuration: file defaults < config file < runtime overrides
+    pub fn load(overrides: &ConfigOverrides) -> Result<Self> {
         let mut config = AppConfig::default();
 
         // Try loading config file
-        let config_path = cli.config.clone().unwrap_or_else(default_config_path);
+        let config_path = overrides.config_path.clone().unwrap_or_else(default_config_path);
         match std::fs::read_to_string(&config_path) {
             Ok(contents) => {
                 let file_config: FileConfig = toml::from_str(&contents)
@@ -67,21 +77,21 @@ impl AppConfig {
             }
         }
 
-        // CLI args override file config (only when explicitly passed)
-        if let Some(v) = cli.render_delay_ms {
+        // Runtime overrides (from CLI args, GUI settings, etc.)
+        if let Some(v) = overrides.render_delay_ms {
             config.render_delay_ms = v;
         }
-        if let Some(v) = cli.sync_delay_ms {
+        if let Some(v) = overrides.sync_delay_ms {
             config.sync_delay_ms = v;
         }
-        if let Some(v) = cli.history_lines {
+        if let Some(v) = overrides.history_lines {
             config.history_lines = v;
         }
-        if let Some(ref v) = cli.log_level {
+        if let Some(ref v) = overrides.log_level {
             config.log_level = v.clone();
         }
-        if cli.log_file.is_some() {
-            config.log_file = cli.log_file.clone();
+        if overrides.log_file.is_some() {
+            config.log_file = overrides.log_file.clone();
         }
 
         Ok(config)

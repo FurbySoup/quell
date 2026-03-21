@@ -14,12 +14,15 @@ Prior research lives in `research/` (gitignored, local only) organized by topic.
 User's Terminal ←→ quell (proxy) ←→ ConPTY ←→ AI CLI tool (e.g. Claude Code)
 ```
 
-Core modules:
-- `src/proxy/` — Main proxy loop, I/O threads, event handling
-- `src/conpty/` — Windows ConPTY session management (CreatePseudoConsole, pipes, resize)
-- `src/vt/` — VT100 emulation, sync block detection, differential rendering
-- `src/history/` — Scrollback history buffer with safe-replay filtering
-- `src/config/` — Configuration file loading and CLI args
+**Workspace layout:**
+- `src/` — Shared engine library (used by CLI, GUI, tests, benches)
+  - `proxy/` — Main proxy loop, I/O threads, event handling
+  - `conpty/` — Windows ConPTY session management
+  - `vt/` — VT100 emulation, sync block detection, differential rendering
+  - `history/` — Scrollback history buffer with safe-replay filtering
+  - `config/` — Configuration file loading and CLI args
+- `cli/` — Phase 1 CLI binary (depends on `quell` library)
+- `gui/` — Phase 2 Tauri GUI (placeholder, depends on `quell` library)
 
 ## Build & Run
 
@@ -27,7 +30,7 @@ Core modules:
 cargo build                    # Debug build (production features only)
 cargo build --release          # Release build
 cargo build --features recording  # Dev build with VT recording support
-cargo run -- claude -- --dangerously-skip-permissions  # Run with Claude Code as child process
+cargo run -p quell-cli -- claude -- --dangerously-skip-permissions  # Run with Claude Code as child process
 cargo test                     # Run all tests (default features)
 cargo test --features recording  # Run all tests including recording
 cargo test --test unit         # Unit tests only

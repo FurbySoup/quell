@@ -1,0 +1,59 @@
+{
+  "hooks": {
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:\\Python314\\python.exe \".claude/hooks/live_proving_reminder.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:\\Python314\\python.exe \".claude/hooks/planning_live_prove.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:\\Python314\\python.exe \".claude/hooks/systematic_debugging.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:\\Python314\\python.exe \".claude/hooks/branch_phase_check.py\"",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:\\Python314\\python.exe \".claude/hooks/pre_commit_gate.py\"",
+            "timeout": 180
+          }
+        ]
+      }
+    ]
+  }
+}

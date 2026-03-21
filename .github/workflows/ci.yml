@@ -30,22 +30,22 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build (default features)
-        run: cargo build --verbose
+        run: cargo build --workspace --verbose
 
       - name: Build (recording feature)
-        run: cargo build --features recording --verbose
+        run: cargo build --workspace --features recording --verbose
 
       - name: Run tests (default features)
-        run: cargo test --verbose
+        run: cargo test --workspace --verbose
 
       - name: Run tests (recording feature)
-        run: cargo test --features recording --verbose
+        run: cargo test --workspace --features recording --verbose
 
       - name: Clippy (default features)
-        run: cargo clippy -- -D warnings -A dead-code -A unused-imports
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Clippy (recording feature)
-        run: cargo clippy --features recording -- -D warnings -A dead-code -A unused-imports
+        run: cargo clippy --workspace --all-targets --features recording -- -D warnings
 
   security:
     runs-on: windows-latest

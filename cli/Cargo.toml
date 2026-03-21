@@ -1,0 +1,32 @@
+[package]
+name = "quell-cli"
+version = "0.1.1"
+edition = "2024"
+description = "Phase 1 CLI proxy — scroll-fix for AI CLI tools"
+license = "MIT"
+repository = "https://github.com/FurbySoup/quell"
+
+[[bin]]
+name = "quell"
+path = "src/main.rs"
+
+[features]
+default = []
+recording = ["quell/recording"]
+
+[dependencies]
+quell = { path = ".." }
+
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+tracing-appender = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.59", features = [
+    "Win32_Foundation",
+] }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("recording"))'] }
