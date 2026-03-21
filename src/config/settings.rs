@@ -12,6 +12,7 @@ pub struct ConfigOverrides {
     pub history_lines: Option<usize>,
     pub log_level: Option<String>,
     pub log_file: Option<String>,
+    pub default_command: Option<String>,
 }
 
 /// Application configuration, merged from file + runtime overrides
@@ -31,6 +32,9 @@ pub struct AppConfig {
 
     /// Log file path
     pub log_file: Option<String>,
+
+    /// Default command to spawn in the GUI (e.g. "claude", "cmd.exe")
+    pub default_command: String,
 }
 
 impl Default for AppConfig {
@@ -41,6 +45,7 @@ impl Default for AppConfig {
             history_lines: 100_000,
             log_level: "info".to_string(),
             log_file: None,
+            default_command: "claude".to_string(),
         }
     }
 }
@@ -53,6 +58,7 @@ struct FileConfig {
     pub history_lines: Option<usize>,
     pub log_level: Option<String>,
     pub log_file: Option<String>,
+    pub default_command: Option<String>,
 }
 
 impl AppConfig {
@@ -93,6 +99,9 @@ impl AppConfig {
         if overrides.log_file.is_some() {
             config.log_file = overrides.log_file.clone();
         }
+        if let Some(ref v) = overrides.default_command {
+            config.default_command = v.clone();
+        }
 
         Ok(config)
     }
@@ -112,6 +121,9 @@ impl AppConfig {
         }
         if file.log_file.is_some() {
             self.log_file = file.log_file.clone();
+        }
+        if let Some(ref v) = file.default_command {
+            self.default_command = v.clone();
         }
     }
 }
@@ -139,6 +151,7 @@ mod tests {
         assert_eq!(config.history_lines, 100_000);
         assert_eq!(config.log_level, "info");
         assert!(config.log_file.is_none());
+        assert_eq!(config.default_command, "claude");
     }
 
     #[test]
@@ -150,6 +163,7 @@ mod tests {
             history_lines: Some(50_000),
             log_level: Some("debug".to_string()),
             log_file: Some("/tmp/test.log".to_string()),
+            default_command: Some("cmd.exe".to_string()),
         };
         config.apply_file_config(&file);
         assert_eq!(config.render_delay_ms, 10);
@@ -157,6 +171,7 @@ mod tests {
         assert_eq!(config.history_lines, 50_000);
         assert_eq!(config.log_level, "debug");
         assert_eq!(config.log_file, Some("/tmp/test.log".to_string()));
+        assert_eq!(config.default_command, "cmd.exe");
     }
 
     #[test]

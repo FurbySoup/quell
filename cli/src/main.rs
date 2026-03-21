@@ -91,6 +91,7 @@ fn main() -> Result<()> {
         history_lines: cli.history_lines,
         log_level: cli.log_level.clone(),
         log_file: cli.log_file.clone(),
+        default_command: None,
     };
     let config = AppConfig::load(&overrides).context("failed to load configuration")?;
     info!(?config, "configuration loaded");

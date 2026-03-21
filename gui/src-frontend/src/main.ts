@@ -1,17 +1,33 @@
-import { initTerminal } from "./terminal";
+import { invoke } from "@tauri-apps/api/core";
+import { initTerminal, getTheme, ThemeMode } from "./terminal";
+import { connectIpc, spawnSession } from "./ipc";
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   const container = document.getElementById("terminal");
   if (!container) return;
 
-  const terminal = initTerminal(container);
+  // Detect system theme and default command from Rust backend
+  let themeMode: ThemeMode = "dark";
+  let defaultCommand = "cmd.exe";
 
-  // Temporary: local echo for verification
-  terminal.writeln("\x1b[1;36mQuell Terminal\x1b[0m v0.1.0");
-  terminal.writeln("Type to test local echo. IPC bridge coming next.\r\n");
+  try {
+    themeMode = (await invoke<string>("get_system_theme")) as ThemeMode;
+  } catch (e) {
+    console.warn("get_system_theme failed, defaulting to dark:", e);
+  }
 
-  terminal.onData((data) => {
-    // Echo typed characters (temporary — will be replaced by IPC bridge)
-    terminal.write(data);
-  });
+  try {
+    defaultCommand = await invoke<string>("get_default_command");
+  } catch (e) {
+    console.warn("get_default_command failed:", e);
+  }
+
+  // Apply theme to page background
+  const theme = getTheme(themeMode);
+  document.body.style.background = theme.background ?? "#1e1e1e";
+
+  const terminal = initTerminal(container, undefined, themeMode);
+
+  await connectIpc(terminal);
+  await spawnSession(defaultCommand);
 });

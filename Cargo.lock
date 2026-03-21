@@ -3200,13 +3200,16 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
+ "crossbeam-channel",
  "quell",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "tracing",
+ "tracing-appender",
  "tracing-subscriber",
+ "windows 0.59.0",
 ]
 
 [[package]]
