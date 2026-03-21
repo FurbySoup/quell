@@ -145,17 +145,19 @@ fn spawn_shell(
 }
 
 /// Write input data to the shell (from xterm.js onData).
-/// Data is a plain string (keyboard input from xterm.js).
+/// Data is base64-encoded keyboard input from xterm.js.
 #[tauri::command]
 fn write_input(
     state: tauri::State<'_, AppState>,
     data: String,
 ) -> Result<(), String> {
+    use base64::engine::general_purpose::STANDARD;
+    let decoded = STANDARD.decode(&data).map_err(|e| format!("base64 decode failed: {e}"))?;
     let proxy_guard = state.proxy.lock().map_err(|e| e.to_string())?;
     let proxy_state = proxy_guard.as_ref().ok_or("no shell running")?;
     proxy_state
         .input_tx
-        .send(data.into_bytes())
+        .send(decoded)
         .map_err(|_| "input channel closed".to_string())
 }
 
@@ -187,24 +189,26 @@ fn get_system_theme() -> String {
     let mut size = std::mem::size_of::<u32>() as u32;
     let mut kind = REG_DWORD;
 
-    let result = unsafe {
-        RegGetValueW(
-            HKEY_CURRENT_USER,
-            w!("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"),
-            w!("AppsUseLightTheme"),
-            RRF_RT_DWORD,
-            Some(&mut kind),
-            Some(&mut data as *mut u32 as *mut std::ffi::c_void),
-            Some(&mut size),
-        )
-    };
-
-    if result.is_ok() && data == 1 {
-        "light".to_string()
-    } else {
-        // Default to dark if registry read fails or value is 0
-        "dark".to_string()
+    // Prefer SystemUsesLightTheme (matches taskbar/system chrome) over
+    // AppsUseLightTheme — terminal apps feel more like system UI than apps.
+    // Falls back to AppsUseLightTheme, then defaults to dark.
+    for value_name in [w!("SystemUsesLightTheme"), w!("AppsUseLightTheme")] {
+        let result = unsafe {
+            RegGetValueW(
+                HKEY_CURRENT_USER,
+                w!("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"),
+                value_name,
+                RRF_RT_DWORD,
+                Some(&mut kind),
+                Some(&mut data as *mut u32 as *mut std::ffi::c_void),
+                Some(&mut size),
+            )
+        };
+        if result.is_ok() {
+            return if data == 1 { "light".to_string() } else { "dark".to_string() };
+        }
     }
+    "dark".to_string()
 }
 
 /// Return the default command from AppConfig (loaded from config file).

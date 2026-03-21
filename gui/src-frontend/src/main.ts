@@ -8,7 +8,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Detect system theme and default command from Rust backend
   let themeMode: ThemeMode = "dark";
-  let defaultCommand = "cmd.exe";
+  let defaultCommand: string | undefined;
 
   try {
     themeMode = (await invoke<string>("get_system_theme")) as ThemeMode;
@@ -28,6 +28,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const terminal = initTerminal(container, undefined, themeMode);
 
+  // Connect IPC bridge then spawn shell with terminal dimensions
   await connectIpc(terminal);
-  await spawnSession(defaultCommand);
+  await spawnSession(defaultCommand, terminal.cols, terminal.rows);
 });
