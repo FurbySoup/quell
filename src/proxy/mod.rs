@@ -69,6 +69,12 @@ pub struct Proxy {
     session: ConPtySession,
     sink: Box<dyn OutputSink>,
     event_tx: Sender<ProxyEvent>,
+    /// External input channel — when set, input comes from here instead of stdin.
+    /// Used by the Tauri GUI to inject keyboard input from xterm.js.
+    external_input: Option<Receiver<Vec<u8>>>,
+    /// External resize channel — when set, resize events come from here.
+    /// Used by the Tauri GUI to forward fit addon resize events.
+    external_resize: Option<Receiver<(i16, i16)>>,
     #[cfg(feature = "recording")]
     recorder: Option<recorder::VtcapRecorder>,
 }
@@ -87,11 +93,21 @@ impl Proxy {
                 session,
                 sink,
                 event_tx,
+                external_input: None,
+                external_resize: None,
                 #[cfg(feature = "recording")]
                 recorder: None,
             },
             event_rx,
         )
+    }
+
+    /// Use external input/resize channels instead of stdin.
+    /// For the Tauri GUI: input comes from xterm.js via IPC, resize from fit addon.
+    pub fn with_external_io(mut self, input_rx: Receiver<Vec<u8>>, resize_rx: Receiver<(i16, i16)>) -> Self {
+        self.external_input = Some(input_rx);
+        self.external_resize = Some(resize_rx);
+        self
     }
 
     /// Attach a VtcapRecorder to capture filtered output during the session.
@@ -190,45 +206,70 @@ impl Proxy {
             .context("failed to spawn output thread")?;
         info!("output thread started");
 
-        // Input thread: reads from real stdin, writes to ConPTY input pipe.
-        //
-        // When stdin is a real console, we use ReadConsoleInputW to get both
-        // keyboard events AND resize events (WINDOW_BUFFER_SIZE_EVENT). This
-        // gives instant resize response instead of the old 100ms polling.
-        // WaitForMultipleObjects provides clean shutdown via a shutdown event.
-        //
-        // When stdin is a pipe (e.g. in tests), we fall back to blocking read
-        // since the thread will unblock when the pipe closes.
+        // Input thread: feeds bytes to ConPTY input pipe.
+        // Three modes:
+        //   1. External channel (GUI) — input from xterm.js via IPC
+        //   2. Console stdin (CLI) — ReadConsoleInputW with resize events
+        //   3. Pipe stdin (tests) — blocking read on stdin pipe
         let input_shutdown_tx = shutdown_tx.clone();
         let input_flag = shutdown_flag.clone();
 
-        // Create a manual-reset event to signal the input thread to shut down
         let shutdown_event = create_shutdown_event()
             .context("failed to create shutdown event")?;
         let shutdown_event_handle = shutdown_event;
 
-        let stdin_is_console = is_stdin_console();
-        debug!(stdin_is_console, "input thread mode selected");
+        let external_input = self.external_input.take();
+        let external_resize = self.external_resize.take();
+        let resize_tx_for_fwd = resize_tx.clone();
 
         let tool = self.tool;
         let input_thread = thread::Builder::new()
             .name("conpty-input".into())
             .spawn(move || {
-                if stdin_is_console {
-                    run_console_input_loop(
-                        input_write,
-                        input_flag,
-                        input_shutdown_tx,
-                        shutdown_event_handle,
-                        resize_tx,
-                        tool,
-                    );
+                if let Some(input_rx) = external_input {
+                    // GUI mode: read from external channel, write to ConPTY pipe
+                    run_channel_input_loop(input_write, input_flag, input_shutdown_tx, input_rx);
                 } else {
-                    run_pipe_input_loop(input_write, input_flag, input_shutdown_tx);
+                    let stdin_is_console = is_stdin_console();
+                    debug!(stdin_is_console, "input thread mode selected");
+                    if stdin_is_console {
+                        run_console_input_loop(
+                            input_write,
+                            input_flag,
+                            input_shutdown_tx,
+                            shutdown_event_handle,
+                            resize_tx,
+                            tool,
+                        );
+                    } else {
+                        run_pipe_input_loop(input_write, input_flag, input_shutdown_tx);
+                    }
                 }
             })
             .context("failed to spawn input thread")?;
         info!("input thread started");
+
+        // External resize forwarder: merges GUI resize events into the same
+        // resize_rx channel the main loop already reads.
+        if let Some(ext_resize_rx) = external_resize {
+            let resize_fwd = resize_tx_for_fwd;
+            let fwd_flag = shutdown_flag.clone();
+            thread::Builder::new()
+                .name("resize-forwarder".into())
+                .spawn(move || {
+                    while !fwd_flag.load(Ordering::Relaxed) {
+                        match ext_resize_rx.recv() {
+                            Ok(size) => {
+                                if resize_fwd.send(size).is_err() {
+                                    break;
+                                }
+                            }
+                            Err(_) => break,
+                        }
+                    }
+                })
+                .ok();
+        }
 
         let mut last_size = (cols, rows);
 
@@ -556,6 +597,38 @@ fn run_console_input_loop(
     // Clean up the event handle
     unsafe {
         let _ = windows::Win32::Foundation::CloseHandle(event_handle);
+    }
+}
+
+/// Channel input loop: reads from an external channel and writes to ConPTY input pipe.
+/// Used by the Tauri GUI where input comes from xterm.js via IPC.
+fn run_channel_input_loop(
+    input_write: crate::conpty::OwnedHandle,
+    flag: Arc<AtomicBool>,
+    shutdown_tx: Sender<ShutdownReason>,
+    input_rx: Receiver<Vec<u8>>,
+) {
+    loop {
+        if flag.load(Ordering::Relaxed) {
+            break;
+        }
+        match input_rx.recv() {
+            Ok(data) => {
+                debug!(bytes = data.len(), "external input received");
+                if let Err(e) = input_write.write_all(&data) {
+                    if !flag.load(Ordering::Relaxed) {
+                        warn!(error = %e, "input pipe write error (external)");
+                        let _ = shutdown_tx.try_send(ShutdownReason::IoError(e.to_string()));
+                    }
+                    break;
+                }
+            }
+            Err(_) => {
+                info!("external input channel closed");
+                let _ = shutdown_tx.try_send(ShutdownReason::InputEof);
+                break;
+            }
+        }
     }
 }
 
