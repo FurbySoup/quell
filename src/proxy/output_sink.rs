@@ -88,6 +88,28 @@ impl OutputSink for BufferSink {
     }
 }
 
+/// Sends output bytes over a crossbeam channel. Used by the Tauri GUI
+/// to bridge proxy output to frontend events without Tauri dependencies
+/// in the shared library.
+pub struct ChannelSink {
+    tx: crossbeam_channel::Sender<Vec<u8>>,
+}
+
+impl ChannelSink {
+    pub fn new() -> (Self, crossbeam_channel::Receiver<Vec<u8>>) {
+        let (tx, rx) = crossbeam_channel::unbounded();
+        (Self { tx }, rx)
+    }
+}
+
+impl OutputSink for ChannelSink {
+    fn write(&self, data: &[u8]) -> Result<()> {
+        self.tx
+            .send(data.to_vec())
+            .map_err(|_| anyhow::anyhow!("output channel closed"))
+    }
+}
+
 /// Get the raw stdout handle for direct WriteFile access.
 fn raw_stdout_handle() -> windows::Win32::Foundation::HANDLE {
     use windows::Win32::System::Console::{GetStdHandle, STD_OUTPUT_HANDLE};
