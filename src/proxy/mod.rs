@@ -51,7 +51,7 @@ use crate::history::{HistoryEventType, LineBuffer, OutputFilter};
 use crate::vt::{SyncBlockDetector, SyncEvent};
 
 use events::{event_channel, ProxyEvent};
-use key_translator::{KeyTranslator, KITTY_DISABLE, KITTY_ENABLE};
+use key_translator::KeyTranslator;
 
 /// Reason a thread is signaling shutdown
 #[derive(Debug, Clone)]
@@ -67,6 +67,7 @@ pub struct Proxy {
     config: AppConfig,
     tool: ToolKind,
     session: ConPtySession,
+    sink: Box<dyn OutputSink>,
     event_tx: Sender<ProxyEvent>,
     #[cfg(feature = "recording")]
     recorder: Option<recorder::VtcapRecorder>,
@@ -74,8 +75,8 @@ pub struct Proxy {
 
 impl Proxy {
     /// Create a new proxy. Returns (proxy, event_receiver).
-    /// In Phase 1, the caller can drop the receiver immediately.
-    pub fn new(config: AppConfig, tool: ToolKind, session: ConPtySession) -> (Self, Receiver<ProxyEvent>) {
+    /// The sink controls where output goes (stdout for CLI, IPC for GUI).
+    pub fn new(config: AppConfig, tool: ToolKind, session: ConPtySession, sink: Box<dyn OutputSink>) -> (Self, Receiver<ProxyEvent>) {
         let (event_tx, event_rx) = event_channel();
         let (cols, rows) = session.size();
         info!(cols, rows, tool = %tool, "proxy created");
@@ -84,6 +85,7 @@ impl Proxy {
                 config,
                 tool,
                 session,
+                sink,
                 event_tx,
                 #[cfg(feature = "recording")]
                 recorder: None,
@@ -228,16 +230,10 @@ impl Proxy {
             .context("failed to spawn input thread")?;
         info!("input thread started");
 
-        let stdout_handle = raw_stdout_handle();
         let mut last_size = (cols, rows);
 
-        // Enable Kitty keyboard protocol on the outer terminal.
-        // Terminals that don't support it will ignore the sequence.
-        if let Err(e) = raw_write_all(stdout_handle, KITTY_ENABLE) {
-            warn!(error = %e, "failed to send Kitty protocol enable");
-        } else {
-            info!("Kitty keyboard protocol enable sent");
-        }
+        // Let the sink initialize (StdoutSink enables Kitty keyboard protocol)
+        self.sink.on_startup();
 
         info!("entering main proxy loop (passthrough mode)");
 
@@ -269,8 +265,8 @@ impl Proxy {
                             // ESC[2J inside sync blocks, correctly identifying
                             // full-redraw blocks for history management.
                             let filtered_owned = filtered.to_vec();
-                            if let Err(e) = raw_write_all(stdout_handle, &filtered_owned) {
-                                error!(error = %e, "failed to write to stdout");
+                            if let Err(e) = self.sink.write(&filtered_owned) {
+                                error!(error = %e, "output sink write failed");
                                 break;
                             }
 
@@ -345,12 +341,8 @@ impl Proxy {
             }
         }
 
-        // Disable Kitty keyboard protocol before restoring terminal state
-        if let Err(e) = raw_write_all(stdout_handle, KITTY_DISABLE) {
-            warn!(error = %e, "failed to send Kitty protocol disable");
-        } else {
-            info!("Kitty keyboard protocol disabled");
-        }
+        // Let the sink clean up (StdoutSink disables Kitty keyboard protocol)
+        self.sink.on_shutdown();
 
         // Finalize recording if active
         #[cfg(feature = "recording")]
@@ -645,28 +637,6 @@ pub fn strip_clear_screen(data: &[u8]) -> Vec<u8> {
     }
 
     result
-}
-
-/// Get the raw stdout handle for direct WriteFile access.
-/// We bypass Rust's `std::io::stdout()` because it uses `WriteConsoleW` in console mode,
-/// which rejects non-UTF-8 byte sequences (e.g., emoji split across ConPTY chunks).
-fn raw_stdout_handle() -> windows::Win32::Foundation::HANDLE {
-    use windows::Win32::System::Console::{GetStdHandle, STD_OUTPUT_HANDLE};
-    unsafe { GetStdHandle(STD_OUTPUT_HANDLE).expect("failed to get stdout handle") }
-}
-
-/// Write all bytes to a raw handle using WriteFile.
-fn raw_write_all(handle: windows::Win32::Foundation::HANDLE, mut data: &[u8]) -> anyhow::Result<()> {
-    use windows::Win32::Storage::FileSystem::WriteFile;
-    while !data.is_empty() {
-        let mut written = 0u32;
-        unsafe {
-            WriteFile(handle, Some(data), Some(&mut written), None)
-                .map_err(|e| anyhow::anyhow!("WriteFile failed: {e}"))?;
-        }
-        data = &data[written as usize..];
-    }
-    Ok(())
 }
 
 #[cfg(test)]

@@ -10,6 +10,7 @@ use tracing::{info, warn};
 
 use quell::config::{self, AppConfig, ConfigOverrides};
 use quell::conpty::{self, ConsoleMode, ConPtySession};
+use quell::proxy::output_sink::StdoutSink;
 use quell::proxy::Proxy;
 
 /// Quell — Windows-native terminal proxy for AI CLI tools
@@ -136,7 +137,7 @@ fn run_proxy(command_line: &str, config: AppConfig, tool: config::ToolKind, reco
     let (cols, rows, console_mode, session) = setup_proxy(command_line)?;
 
     // Create and run the proxy
-    let (proxy, _events) = Proxy::new(config, tool, session);
+    let (proxy, _events) = Proxy::new(config, tool, session, Box::new(StdoutSink::new()));
     let proxy = if let Some(path) = record_path {
         let recorder = quell::proxy::recorder::VtcapRecorder::create(
             std::path::Path::new(path),
@@ -159,7 +160,7 @@ fn run_proxy(command_line: &str, config: AppConfig, tool: config::ToolKind) -> R
     let (_cols, _rows, console_mode, session) = setup_proxy(command_line)?;
 
     // Create and run the proxy
-    let (proxy, _events) = Proxy::new(config, tool, session);
+    let (proxy, _events) = Proxy::new(config, tool, session, Box::new(StdoutSink::new()));
     let result = proxy.run();
 
     teardown_proxy(console_mode);

@@ -1,4 +1,3 @@
-#![allow(dead_code)] // Phase 2 extension point — used by tests + Tauri GUI, not the CLI binary yet
 // Output sink abstraction — decouples the proxy from stdout.
 //
 // Phase 1 (CLI proxy) uses StdoutSink which writes directly to the Windows
