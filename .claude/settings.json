@@ -1,5 +1,16 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:\\Python314\\python.exe \".claude/hooks/session_git_status.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "TaskCompleted": [
       {
         "hooks": [
@@ -29,6 +40,11 @@
             "type": "command",
             "command": "C:\\Python314\\python.exe \".claude/hooks/systematic_debugging.py\"",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "C:\\Python314\\python.exe \".claude/hooks/push_reminder.py\"",
+            "timeout": 5
           }
         ]
       }
@@ -51,6 +67,11 @@
             "type": "command",
             "command": "C:\\Python314\\python.exe \".claude/hooks/pre_commit_gate.py\"",
             "timeout": 180
+          },
+          {
+            "type": "command",
+            "command": "C:\\Python314\\python.exe \".claude/hooks/commit_discipline.py\"",
+            "timeout": 5
           }
         ]
       }

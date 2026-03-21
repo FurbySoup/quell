@@ -95,10 +95,11 @@ def main():
             flush=True
         )
 
+    except SystemExit:
+        raise  # Let sys.exit(2) propagate for blocking
     except Exception:
         pass
-    finally:
-        sys.exit(0)
+    sys.exit(0)
 
 
 if __name__ == '__main__':

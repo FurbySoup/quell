@@ -104,6 +104,9 @@ These fire automatically — no manual action needed:
 | `pre_commit_gate.py` | PreToolUse (Bash) | Blocks `git commit` if cargo test or clippy fails |
 | `systematic_debugging.py` | Stop | Detects circular debugging (repeated corrections) and suggests structured approach |
 | `gitignore_check.py` | PostToolUse (Write/Edit) | Warns if new files look sensitive, like build artifacts, or contain secrets |
+| `session_git_status.py` | SessionStart | Injects repo state (unpushed commits, stale branches) as context |
+| `push_reminder.py` | Stop | Warns about unpushed commits when Claude finishes responding |
+| `commit_discipline.py` | PreToolUse (Bash) | Blocks direct commits to master, force push, and reset --hard |
 
 ## Key Dependencies
 
