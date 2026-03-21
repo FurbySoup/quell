@@ -5,8 +5,8 @@
   "identifier": "com.furbysoup.quell",
   "build": {
     "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": { "script": "npm run dev", "cwd": "../src-frontend" },
+    "beforeBuildCommand": { "script": "npm run build", "cwd": "../src-frontend" },
     "frontendDist": "../src-frontend/dist"
   },
   "app": {
