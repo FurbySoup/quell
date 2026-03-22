@@ -142,6 +142,11 @@ export function initPaletteUI(): void {
   });
 
   input.addEventListener("keydown", (e) => {
+    if (e.key === "Tab") {
+      e.preventDefault();
+      return;
+    }
+
     if (e.key === "Escape") {
       closePalette();
       return;

@@ -437,6 +437,40 @@ function switchToTabIndex(index: number): void {
   }
 }
 
+function openShortcuts(): void {
+  const overlay = document.getElementById("shortcuts-overlay")!;
+  const grid = overlay.querySelector(".shortcuts-grid")!;
+  grid.innerHTML = "";
+  const shortcuts: [string, string][] = [
+    ["Ctrl+Shift+P", "Command palette"],
+    ["Ctrl+Shift+F", "Search in terminal"],
+    ["Ctrl+Shift+N", "New tab"],
+    ["Ctrl+Tab", "Next tab"],
+    ["Ctrl+Shift+Tab", "Previous tab"],
+    ["Ctrl+1-9", "Jump to tab"],
+    ["Ctrl+= / Ctrl+-", "Zoom in / out"],
+    ["Ctrl+0", "Reset zoom"],
+    ["F3 / Shift+F3", "Next / previous match"],
+    ["Ctrl+C", "Copy (with selection) / SIGINT"],
+    ["Ctrl+V", "Paste"],
+    ["Ctrl+Shift+C/V", "Alternative copy / paste"],
+    ["Win+H", "Voice typing"],
+  ];
+  for (const [key, desc] of shortcuts) {
+    const kbd = document.createElement("kbd");
+    kbd.textContent = key;
+    const span = document.createElement("span");
+    span.textContent = desc;
+    grid.appendChild(kbd);
+    grid.appendChild(span);
+  }
+  overlay.hidden = false;
+}
+
+function closeShortcuts(): void {
+  document.getElementById("shortcuts-overlay")!.hidden = true;
+}
+
 function removeActiveSession(): void {
   if (activeSessionId) {
     removeSession(activeSessionId);
@@ -473,6 +507,18 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (!confirmed) {
         event.preventDefault();
       }
+    }
+  });
+
+  // Shortcuts reference overlay — dismiss with Escape or backdrop click
+  const shortcutsOverlay = document.getElementById("shortcuts-overlay")!;
+  shortcutsOverlay.addEventListener("click", (e) => {
+    if (e.target === shortcutsOverlay) closeShortcuts();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !shortcutsOverlay.hidden) {
+      closeShortcuts();
+      e.stopPropagation();
     }
   });
 
@@ -614,6 +660,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
         savePreference("defaultArgs", currentArgs);
       },
+    },
+    {
+      id: "keyboard-shortcuts",
+      label: "Keyboard Shortcuts",
+      category: "Help",
+      execute: () => openShortcuts(),
     },
     ...themeActions,
   ]);

@@ -427,3 +427,61 @@ body {
   color: var(--q-bg);
   opacity: 0.7;
 }
+
+/* Keyboard shortcuts reference overlay */
+#shortcuts-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  justify-content: center;
+  padding-top: 10vh;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+#shortcuts-overlay[hidden] {
+  display: none;
+}
+
+.shortcuts-panel {
+  width: calc(420px * var(--q-ui-scale));
+  max-height: calc(480px * var(--q-ui-scale));
+  background: var(--q-overlay-bg);
+  border: 1px solid var(--q-overlay-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.shortcuts-header {
+  font-family: system-ui, sans-serif;
+  font-size: calc(14px * var(--q-ui-scale));
+  color: var(--q-text);
+  padding: calc(10px * var(--q-ui-scale)) calc(14px * var(--q-ui-scale));
+  border-bottom: 1px solid var(--q-border);
+}
+
+.shortcuts-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0;
+  padding: calc(8px * var(--q-ui-scale)) 0;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.shortcuts-grid kbd {
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: calc(12px * var(--q-ui-scale));
+  color: var(--q-text);
+  padding: calc(4px * var(--q-ui-scale)) calc(14px * var(--q-ui-scale));
+  text-align: right;
+  white-space: nowrap;
+}
+
+.shortcuts-grid span {
+  font-family: system-ui, sans-serif;
+  font-size: calc(12px * var(--q-ui-scale));
+  color: var(--q-text-muted);
+  padding: calc(4px * var(--q-ui-scale)) calc(14px * var(--q-ui-scale));
+}

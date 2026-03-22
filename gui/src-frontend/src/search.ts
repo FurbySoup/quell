@@ -95,6 +95,22 @@ export function initSearchUI(): void {
   prevBtn.addEventListener("click", () => findPrevious());
   nextBtn.addEventListener("click", () => findNext());
   closeBtn.addEventListener("click", () => closeSearch());
+
+  // Focus trap — Tab cycles within search bar
+  const searchBar = document.querySelector("#search-overlay .search-bar")!;
+  searchBar.addEventListener("keydown", (e: Event) => {
+    const ke = e as KeyboardEvent;
+    if (ke.key !== "Tab") return;
+    const focusable = searchBar.querySelectorAll<HTMLElement>("input, button");
+    const list = Array.from(focusable);
+    const idx = list.indexOf(document.activeElement as HTMLElement);
+    if (idx === -1) return;
+    ke.preventDefault();
+    const next = ke.shiftKey
+      ? (idx - 1 + list.length) % list.length
+      : (idx + 1) % list.length;
+    list[next].focus();
+  });
 }
 
 export function openSearch(): void {
