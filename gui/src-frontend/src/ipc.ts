@@ -1,37 +1,23 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { Terminal, IDisposable } from "@xterm/xterm";
 import { setPasteCallback, clearPasteCallback } from "./terminal";
 
-/// Global event listeners (initialized once, route by session_id)
-let listenersInitialized = false;
+/// Global exit event listener (initialized once, routes by session_id).
+/// Output uses per-session Channels instead of broadcast events.
+let exitListenerInitialized = false;
 
-type OutputHandler = (data: Uint8Array) => void;
 type ExitHandler = (exitCode: number) => void;
 
-const outputHandlers = new Map<string, OutputHandler>();
 const exitHandlers = new Map<string, ExitHandler>();
 
 /// Per-terminal disposables so we can clean up on reconnect/close
 const terminalDisposables = new Map<Terminal, IDisposable[]>();
 
-/// Initialize global event listeners (call once at startup)
+/// Initialize the global child-exited event listener (call once at startup)
 export async function initIpcListeners(): Promise<void> {
-  if (listenersInitialized) return;
-  listenersInitialized = true;
-
-  await listen<{ session_id: string; data: string }>(
-    "terminal-output",
-    (event) => {
-      const handler = outputHandlers.get(event.payload.session_id);
-      if (handler) {
-        const bytes = Uint8Array.from(atob(event.payload.data), (c) =>
-          c.charCodeAt(0),
-        );
-        handler(bytes);
-      }
-    },
-  );
+  if (exitListenerInitialized) return;
+  exitListenerInitialized = true;
 
   await listen<{ session_id: string; exit_code: number }>(
     "child-exited",
@@ -46,6 +32,7 @@ export async function initIpcListeners(): Promise<void> {
 
 /// Connect a terminal to a session's IPC events.
 /// Disposes any previous handlers on this terminal before registering new ones.
+/// Output is handled by the per-session Channel created in spawnSession().
 export function connectSession(
   sessionId: string,
   terminal: Terminal,
@@ -53,11 +40,6 @@ export function connectSession(
 ): void {
   // Dispose previous handlers on this terminal (handles restart case)
   disposeTerminalHandlers(terminal);
-
-  // Route output to this terminal
-  outputHandlers.set(sessionId, (data) => {
-    terminal.write(data);
-  });
 
   // Handle child exit — offer restart
   exitHandlers.set(sessionId, (exitCode) => {
@@ -71,6 +53,7 @@ export function connectSession(
       terminal.reset();
       try {
         const newId = await spawnSession(
+          terminal,
           defaultCommand,
           terminal.cols,
           terminal.rows,
@@ -122,21 +105,31 @@ export function disconnectSession(
   sessionId: string,
   terminal?: Terminal,
 ): void {
-  outputHandlers.delete(sessionId);
   exitHandlers.delete(sessionId);
   if (terminal) {
     disposeTerminalHandlers(terminal);
   }
 }
 
-/// Spawn a terminal session. Returns the session_id.
+/// Spawn a terminal session with a per-session output Channel.
+/// The Channel delivers raw bytes directly as ArrayBuffer — no base64 encoding.
+/// Returns the session_id.
 export async function spawnSession(
+  terminal: Terminal,
   command?: string,
   cols?: number,
   rows?: number,
   sessionId?: string,
 ): Promise<string> {
+  // Create a per-session Channel for streaming output.
+  // Tauri delivers Vec<u8> as ArrayBuffer to the onmessage callback.
+  const onOutput = new Channel<ArrayBuffer>();
+  onOutput.onmessage = (data) => {
+    terminal.write(new Uint8Array(data));
+  };
+
   return await invoke<string>("spawn_shell", {
+    onOutput,
     command,
     cols,
     rows,

@@ -8,6 +8,7 @@ use std::time::Duration;
 use base64::Engine;
 use crossbeam_channel::{Receiver, Sender};
 use serde::Serialize;
+use tauri::ipc::Channel;
 use tauri::{Emitter, Manager};
 use tracing::{error, info, warn};
 
@@ -52,15 +53,6 @@ impl AppState {
     }
 }
 
-/// Event payload sent to the frontend with terminal output.
-#[derive(Clone, Serialize)]
-struct TerminalOutput {
-    /// Session this output belongs to
-    session_id: String,
-    /// Base64-encoded terminal output bytes
-    data: String,
-}
-
 /// Event payload sent when the child process exits.
 #[derive(Clone, Serialize)]
 struct ChildExited {
@@ -74,6 +66,7 @@ struct ChildExited {
 fn spawn_shell(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
+    on_output: Channel<Vec<u8>>,
     command: Option<String>,
     cols: Option<i16>,
     rows: Option<i16>,
@@ -115,39 +108,22 @@ fn spawn_shell(
     }
 
     // Output forwarder thread: raw passthrough with RenderCoalescer for batching.
-    // Raw VT bytes flow directly to xterm.js, preserving scrollback.
+    // Raw VT bytes flow via Tauri Channel directly to xterm.js as Uint8Array,
+    // preserving scrollback. No base64 encoding needed — Channels support raw bytes.
     //
     // Resize-during-streaming may cause visual artifacts from ConPTY's
     // cursor-positioned redraw — this is a known ConPTY limitation
     // (microsoft/terminal#14774), same as the Phase 1 CLI.
-    let app_handle = app.clone();
     let sid = session_id.clone();
     thread::Builder::new()
         .name(format!("output-forwarder-{sid}"))
         .spawn(move || {
-            let b64 = base64::engine::general_purpose::STANDARD;
             let mut coalescer = RenderCoalescer::new(
                 Duration::from_millis(5),   // render_delay: batch rapid output
                 Duration::from_millis(50),  // sync_delay: wait after sync blocks
                 Duration::from_millis(16),  // min_frame_time: ~60fps cap
             );
             let mut pending_output: Vec<u8> = Vec::new();
-
-            let sid_ref = &sid;
-            let emit = |data: &[u8]| -> bool {
-                let encoded = b64.encode(data);
-                if let Err(e) = app_handle.emit(
-                    "terminal-output",
-                    TerminalOutput {
-                        session_id: sid_ref.clone(),
-                        data: encoded,
-                    },
-                ) {
-                    warn!(error = %e, session_id = %sid_ref, "failed to emit terminal-output event");
-                    return false;
-                }
-                true
-            };
 
             loop {
                 let timeout = coalescer.time_until_render()
@@ -166,8 +142,10 @@ fn spawn_shell(
                             }
                             Err(_) => {
                                 // Channel closed — flush and exit
-                                if !pending_output.is_empty() {
-                                    emit(&pending_output);
+                                if !pending_output.is_empty()
+                                    && let Err(e) = on_output.send(std::mem::take(&mut pending_output))
+                                {
+                                    warn!(error = %e, session_id = %sid, "failed to send final output");
                                 }
                                 break;
                             }
@@ -178,17 +156,18 @@ fn spawn_shell(
                     }
                 }
 
-                // Emit when coalescer says it's time
+                // Send when coalescer says it's time — take() moves the buffer without cloning
                 if coalescer.should_render() && !pending_output.is_empty() {
-                    if !emit(&pending_output) {
+                    if let Err(e) = on_output.send(std::mem::take(&mut pending_output)) {
+                        warn!(error = %e, session_id = %sid, "failed to send output via channel");
                         break;
                     }
-                    pending_output.clear();
                     coalescer.mark_rendered();
                 }
             }
             info!(session_id = %sid, "output forwarder exiting");
         })
+        .map_err(|e| error!(error = %e, "failed to spawn thread"))
         .ok();
 
     // Proxy event forwarder: watches for ChildExited, clears session state for re-spawn
@@ -215,6 +194,7 @@ fn spawn_shell(
                 }
             }
         })
+        .map_err(|e| error!(error = %e, "failed to spawn thread"))
         .ok();
 
     // Proxy runner thread: runs the blocking proxy loop.
@@ -232,6 +212,7 @@ fn spawn_shell(
                 Err(e) => error!(error = %e, session_id = %sid, "proxy error"),
             }
         })
+        .map_err(|e| error!(error = %e, "failed to spawn thread"))
         .ok();
 
     info!(session_id = %session_id, "shell spawned successfully");
@@ -287,38 +268,6 @@ fn close_session(
     }
 }
 
-/// Detect Windows dark/light mode from the registry.
-/// Returns "dark" or "light".
-#[tauri::command]
-fn get_system_theme() -> String {
-    use windows::Win32::System::Registry::{
-        HKEY_CURRENT_USER, REG_DWORD, RegGetValueW, RRF_RT_DWORD,
-    };
-    use windows::core::w;
-
-    let mut data: u32 = 0;
-    let mut size = std::mem::size_of::<u32>() as u32;
-    let mut kind = REG_DWORD;
-
-    for value_name in [w!("SystemUsesLightTheme"), w!("AppsUseLightTheme")] {
-        let result = unsafe {
-            RegGetValueW(
-                HKEY_CURRENT_USER,
-                w!("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"),
-                value_name,
-                RRF_RT_DWORD,
-                Some(&mut kind),
-                Some(&mut data as *mut u32 as *mut std::ffi::c_void),
-                Some(&mut size),
-            )
-        };
-        if result.is_ok() {
-            return if data == 1 { "light".to_string() } else { "dark".to_string() };
-        }
-    }
-    "dark".to_string()
-}
-
 /// Return the default command from AppConfig (loaded from config file).
 #[tauri::command]
 fn get_default_command() -> String {
@@ -342,13 +291,13 @@ fn main() {
     info!(version = env!("CARGO_PKG_VERSION"), "quell GUI starting");
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_store::Builder::default().build())
         .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![
             spawn_shell,
             write_input,
             resize_pty,
             close_session,
-            get_system_theme,
             get_default_command,
         ])
         .on_window_event(|window, event| {

@@ -1,6 +1,8 @@
 import { Terminal, ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
+import { WebLinksAddon } from "@xterm/addon-web-links";
+import { Unicode11Addon } from "@xterm/addon-unicode11";
 import "@xterm/xterm/css/xterm.css";
 
 export type ThemeMode = "dark" | "light";
@@ -62,7 +64,26 @@ export interface TerminalInstance {
   sessionId: string;
 }
 
-/// Callback for paste events — set by ipc.ts with the correct session ID
+// --- Shortcut callback registry (avoids circular imports with main.ts) ---
+
+export interface ShortcutCallbacks {
+  nextTab: () => void;
+  prevTab: () => void;
+  switchToTab: (index: number) => void;
+  newTab: () => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
+  zoomReset: () => void;
+}
+
+let shortcuts: ShortcutCallbacks | null = null;
+
+export function registerShortcuts(callbacks: ShortcutCallbacks): void {
+  shortcuts = callbacks;
+}
+
+// --- Paste callback registry ---
+
 type PasteCallback = (text: string) => void;
 const pasteCallbacks = new Map<Terminal, PasteCallback>();
 
@@ -77,10 +98,14 @@ export function clearPasteCallback(terminal: Terminal): void {
   pasteCallbacks.delete(terminal);
 }
 
+// --- Terminal creation ---
+
 export function createTerminal(
   parent: HTMLElement,
   sessionId: string,
   themeMode?: ThemeMode,
+  fontSize?: number,
+  scrollback?: number,
 ): TerminalInstance {
   const theme = getTheme(themeMode ?? "dark");
 
@@ -91,52 +116,132 @@ export function createTerminal(
 
   const terminal = new Terminal({
     fontFamily: "Cascadia Code, Consolas, monospace",
-    fontSize: 14,
+    fontSize: fontSize ?? 14,
     cursorBlink: true,
+    scrollback: scrollback ?? 10000,
     theme,
   });
 
   terminal.open(container);
 
-  // Copy/paste keyboard shortcuts
+  const copySelection = () => {
+    if (terminal.hasSelection()) {
+      navigator.clipboard.writeText(terminal.getSelection());
+    }
+  };
+
+  const pasteFromClipboard = (ev: KeyboardEvent) => {
+    ev.preventDefault();
+    const cb = pasteCallbacks.get(terminal);
+    if (cb) {
+      navigator.clipboard.readText().then((text) => {
+        if (text) cb(text);
+      });
+    }
+  };
+
+  // Keyboard shortcut handler
   terminal.attachCustomKeyEventHandler((event: KeyboardEvent): boolean => {
     if (event.type !== "keydown") {
       return true;
     }
 
-    // Ctrl+C with selection -> copy to clipboard
+    // Ctrl+C with selection -> copy, without selection -> SIGINT (pass through)
     if (event.ctrlKey && event.key === "c" && terminal.hasSelection()) {
-      navigator.clipboard.writeText(terminal.getSelection());
+      copySelection();
       return false;
     }
 
-    // Ctrl+V -> paste from clipboard via registered callback
+    // Ctrl+V -> paste
     if (event.ctrlKey && event.key === "v") {
-      // preventDefault stops the browser's native paste event from also
-      // firing on xterm's textarea, which would cause double paste
-      event.preventDefault();
-      const cb = pasteCallbacks.get(terminal);
-      if (cb) {
-        navigator.clipboard.readText().then((text) => {
-          if (text) cb(text);
-        });
-      }
+      pasteFromClipboard(event);
       return false;
+    }
+
+    // Ctrl+Shift+C / Ctrl+Shift+V -> alternative copy/paste
+    if (event.ctrlKey && event.shiftKey && event.key === "C") {
+      copySelection();
+      return false;
+    }
+    if (event.ctrlKey && event.shiftKey && event.key === "V") {
+      pasteFromClipboard(event);
+      return false;
+    }
+
+    if (shortcuts) {
+      // Ctrl+Tab / Ctrl+Shift+Tab -> tab cycling
+      if (event.ctrlKey && event.key === "Tab") {
+        event.preventDefault();
+        if (event.shiftKey) {
+          shortcuts.prevTab();
+        } else {
+          shortcuts.nextTab();
+        }
+        return false;
+      }
+
+      // Ctrl+1-9 -> direct tab switch
+      if (event.ctrlKey && !event.shiftKey && !event.altKey) {
+        const num = parseInt(event.key);
+        if (num >= 1 && num <= 9) {
+          shortcuts.switchToTab(num - 1);
+          return false;
+        }
+      }
+
+      // Ctrl+Shift+N -> new tab
+      if (event.ctrlKey && event.shiftKey && event.key === "N") {
+        shortcuts.newTab();
+        return false;
+      }
+
+      // Ctrl+= / Ctrl+- / Ctrl+0 -> zoom
+      if (event.ctrlKey && !event.shiftKey && !event.altKey) {
+        if (event.key === "=" || event.key === "+") {
+          event.preventDefault();
+          shortcuts.zoomIn();
+          return false;
+        }
+        if (event.key === "-") {
+          event.preventDefault();
+          shortcuts.zoomOut();
+          return false;
+        }
+        if (event.key === "0") {
+          event.preventDefault();
+          shortcuts.zoomReset();
+          return false;
+        }
+      }
     }
 
     return true;
   });
 
+  // Addon loading order: WebGL (rendering) -> Unicode11 (text) -> WebLinks (UX) -> Fit (layout)
+  try {
+    const webglAddon = new WebglAddon();
+    webglAddon.onContextLoss(() => {
+      console.warn("WebGL context lost, falling back to canvas renderer");
+      webglAddon.dispose();
+    });
+    terminal.loadAddon(webglAddon);
+  } catch (e) {
+    console.warn(
+      "WebGL addon failed to load, falling back to canvas renderer:",
+      e,
+    );
+  }
+
+  const unicode11Addon = new Unicode11Addon();
+  terminal.loadAddon(unicode11Addon);
+  terminal.unicode.activeVersion = "11";
+
+  terminal.loadAddon(new WebLinksAddon());
+
   const fitAddon = new FitAddon();
   terminal.loadAddon(fitAddon);
   fitAddon.fit();
-
-  try {
-    const webglAddon = new WebglAddon();
-    terminal.loadAddon(webglAddon);
-  } catch (e) {
-    console.warn("WebGL addon failed to load, falling back to canvas renderer:", e);
-  }
 
   return { terminal, fitAddon, container, sessionId };
 }

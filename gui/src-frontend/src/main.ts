@@ -4,6 +4,7 @@ import {
   activateTerminal,
   deactivateTerminal,
   getTheme,
+  registerShortcuts,
   ThemeMode,
   TerminalInstance,
 } from "./terminal";
@@ -14,6 +15,12 @@ import {
   spawnSession,
   closeSession,
 } from "./ipc";
+import {
+  loadPreferences,
+  savePreference,
+  DEFAULTS,
+  Preferences,
+} from "./preferences";
 
 interface Session {
   id: string;
@@ -26,6 +33,13 @@ let sessions: Session[] = [];
 let activeSessionId: string | null = null;
 let themeMode: ThemeMode = "dark";
 let defaultCommand: string | undefined;
+
+// Zoom state
+const MIN_FONT_SIZE = 8;
+const MAX_FONT_SIZE = 32;
+const FONT_STEP = 2;
+let currentFontSize = DEFAULTS.fontSize;
+let currentThemePref: Preferences["themePref"] = DEFAULTS.themePref;
 
 function getTabsEl(): HTMLElement {
   return document.getElementById("tabs")!;
@@ -111,10 +125,16 @@ async function addSession(): Promise<void> {
 
   // Create terminal instance
   const tempId = `pending-${Date.now()}`;
-  const instance = createTerminal(terminalsEl, tempId, themeMode);
+  const instance = createTerminal(
+    terminalsEl,
+    tempId,
+    themeMode,
+    currentFontSize,
+  );
 
-  // Spawn backend session
+  // Spawn backend session — Channel for output is created inside spawnSession
   const sessionId = await spawnSession(
+    instance.terminal,
     defaultCommand,
     instance.terminal.cols,
     instance.terminal.rows,
@@ -128,7 +148,12 @@ async function addSession(): Promise<void> {
   const tabEl = createTabElement(sessionId, sessions.length + 1);
   tabsEl.appendChild(tabEl);
 
-  const session: Session = { id: sessionId, instance, tabEl, customName: false };
+  const session: Session = {
+    id: sessionId,
+    instance,
+    tabEl,
+    customName: false,
+  };
   sessions.push(session);
 
   // Wire IPC
@@ -197,14 +222,80 @@ function updateTabBarVisibility(): void {
   }
 }
 
-document.addEventListener("DOMContentLoaded", async () => {
-  // Detect system theme and default command from Rust backend
-  try {
-    themeMode = (await invoke<string>("get_system_theme")) as ThemeMode;
-  } catch (e) {
-    console.warn("get_system_theme failed, defaulting to dark:", e);
-  }
+// --- Zoom ---
 
+function setFontSize(size: number): void {
+  currentFontSize = Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, size));
+  for (const s of sessions) {
+    s.instance.terminal.options.fontSize = currentFontSize;
+  }
+  // Only fit the active session — inactive ones will fit on activation
+  const active = sessions.find((s) => s.id === activeSessionId);
+  if (active) {
+    active.instance.fitAddon.fit();
+  }
+  savePreference("fontSize", currentFontSize);
+}
+
+// --- Theme ---
+
+function applyTheme(mode: ThemeMode): void {
+  themeMode = mode;
+  const theme = getTheme(mode);
+  document.body.style.background = theme.background ?? "#1e1e1e";
+  if (mode === "light") {
+    document.body.classList.add("light");
+    document.body.classList.remove("dark");
+  } else {
+    document.body.classList.add("dark");
+    document.body.classList.remove("light");
+  }
+  for (const s of sessions) {
+    s.instance.terminal.options.theme = theme;
+  }
+}
+
+function resolveTheme(pref: Preferences["themePref"]): ThemeMode {
+  if (pref === "system") {
+    return window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
+  }
+  return pref;
+}
+
+// --- Tab navigation ---
+
+function nextTab(): void {
+  if (sessions.length <= 1) return;
+  const idx = sessions.findIndex((s) => s.id === activeSessionId);
+  const next = (idx + 1) % sessions.length;
+  switchToSession(sessions[next].id);
+}
+
+function prevTab(): void {
+  if (sessions.length <= 1) return;
+  const idx = sessions.findIndex((s) => s.id === activeSessionId);
+  const prev = (idx - 1 + sessions.length) % sessions.length;
+  switchToSession(sessions[prev].id);
+}
+
+function switchToTabIndex(index: number): void {
+  if (index >= 0 && index < sessions.length) {
+    switchToSession(sessions[index].id);
+  }
+}
+
+// --- Initialization ---
+
+document.addEventListener("DOMContentLoaded", async () => {
+  // Load persisted preferences
+  const prefs = await loadPreferences();
+  currentFontSize = prefs.fontSize;
+  currentThemePref = prefs.themePref;
+  themeMode = resolveTheme(currentThemePref);
+
+  // Load default command from Rust backend
   try {
     defaultCommand = await invoke<string>("get_default_command");
   } catch (e) {
@@ -212,11 +303,18 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   // Apply theme to page
-  const theme = getTheme(themeMode);
-  document.body.style.background = theme.background ?? "#1e1e1e";
-  if (themeMode === "light") {
-    document.body.classList.add("light");
-  }
+  applyTheme(themeMode);
+
+  // Register keyboard shortcut callbacks
+  registerShortcuts({
+    nextTab,
+    prevTab,
+    switchToTab: switchToTabIndex,
+    newTab: () => addSession(),
+    zoomIn: () => setFontSize(currentFontSize + FONT_STEP),
+    zoomOut: () => setFontSize(currentFontSize - FONT_STEP),
+    zoomReset: () => setFontSize(DEFAULTS.fontSize),
+  });
 
   // Initialize global IPC listeners
   await initIpcListeners();
@@ -229,16 +327,25 @@ document.addEventListener("DOMContentLoaded", async () => {
     addSession();
   });
 
-  // Global resize handler — fit the active terminal.
-  // xterm.js onResize (in ipc.ts) forwards the new dimensions to the backend.
+  // ResizeObserver on terminal container — more reliable than window resize,
+  // fires on tab switch, split pane resize, and window resize.
   let resizeTimeout: ReturnType<typeof setTimeout> | null = null;
-  window.addEventListener("resize", () => {
+  const resizeObserver = new ResizeObserver(() => {
     if (resizeTimeout) clearTimeout(resizeTimeout);
     resizeTimeout = setTimeout(() => {
       const active = sessions.find((s) => s.id === activeSessionId);
       if (active) {
         active.instance.fitAddon.fit();
       }
-    }, 100);
+    }, 32);
+  });
+  resizeObserver.observe(getTerminalsEl());
+
+  // Auto dark/light switching at runtime via matchMedia
+  const darkMediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+  darkMediaQuery.addEventListener("change", () => {
+    if (currentThemePref === "system") {
+      applyTheme(resolveTheme("system"));
+    }
   });
 });
