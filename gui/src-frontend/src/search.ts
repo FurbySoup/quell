@@ -3,6 +3,14 @@ import type { SearchAddon } from "@xterm/addon-search";
 let currentAddon: SearchAddon | null = null;
 let searchQuery = "";
 let searchOptions = { regex: false, caseSensitive: false, wholeWord: false };
+const decorations = {
+  matchBackground: "#515c6a",
+  matchBorder: "#74879f",
+  matchOverviewRuler: "#515c6a",
+  activeMatchBackground: "#515c6a",
+  activeMatchBorder: "#f0c674",
+  activeMatchColorOverviewRuler: "#f0c674",
+};
 
 const overlay = () => document.getElementById("search-overlay")!;
 const input = () => document.getElementById("search-input") as HTMLInputElement;
@@ -10,14 +18,25 @@ const countEl = () => document.getElementById("search-count")!;
 
 let isOpen = false;
 
+function searchOpts(incremental?: boolean) {
+  return { ...searchOptions, decorations, ...(incremental ? { incremental: true } : {}) };
+}
+
+function updateCount(found: boolean): void {
+  if (!searchQuery) {
+    countEl().textContent = "";
+  } else if (!found) {
+    countEl().textContent = "No results";
+  } else {
+    countEl().textContent = "";
+  }
+}
+
 export function setActiveSearchAddon(addon: SearchAddon): void {
   currentAddon = addon;
-  // Re-run search if overlay is open and there's a query
-  if (isOpen && searchQuery) {
-    currentAddon.findNext(searchQuery, {
-      ...searchOptions,
-      incremental: true,
-    });
+  if (isOpen && searchQuery && isValidSearch()) {
+    const found = currentAddon.findNext(searchQuery, searchOpts(true));
+    updateCount(found);
   }
 }
 
@@ -32,11 +51,9 @@ export function initSearchUI(): void {
 
   inputEl.addEventListener("input", () => {
     searchQuery = inputEl.value;
-    if (currentAddon && searchQuery) {
-      currentAddon.findNext(searchQuery, {
-        ...searchOptions,
-        incremental: true,
-      });
+    if (currentAddon && searchQuery && isValidSearch()) {
+      const found = currentAddon.findNext(searchQuery, searchOpts(true));
+      updateCount(found);
     } else if (currentAddon && !searchQuery) {
       currentAddon.clearDecorations();
       countEl().textContent = "";
@@ -61,11 +78,9 @@ export function initSearchUI(): void {
   ) => {
     searchOptions[key] = !searchOptions[key];
     btn.classList.toggle("active", searchOptions[key]);
-    if (currentAddon && searchQuery) {
-      currentAddon.findNext(searchQuery, {
-        ...searchOptions,
-        incremental: true,
-      });
+    if (currentAddon && searchQuery && isValidSearch()) {
+      const found = currentAddon.findNext(searchQuery, searchOpts(true));
+      updateCount(found);
     }
   };
 
@@ -113,13 +128,28 @@ export function isSearchOpen(): boolean {
 }
 
 export function findNext(): void {
-  if (currentAddon && searchQuery) {
-    currentAddon.findNext(searchQuery, searchOptions);
+  if (currentAddon && searchQuery && isValidSearch()) {
+    const found = currentAddon.findNext(searchQuery, searchOpts());
+    updateCount(found);
   }
 }
 
 export function findPrevious(): void {
-  if (currentAddon && searchQuery) {
-    currentAddon.findPrevious(searchQuery, searchOptions);
+  if (currentAddon && searchQuery && isValidSearch()) {
+    const found = currentAddon.findPrevious(searchQuery, searchOpts());
+    updateCount(found);
   }
+}
+
+function isValidSearch(): boolean {
+  if (searchOptions.regex && searchQuery) {
+    try {
+      new RegExp(searchQuery);
+    } catch {
+      countEl().textContent = "Invalid regex";
+      currentAddon?.clearDecorations();
+      return false;
+    }
+  }
+  return true;
 }
