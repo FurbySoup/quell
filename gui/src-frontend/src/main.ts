@@ -17,7 +17,8 @@ import {
   savePreference,
   DEFAULTS,
 } from "./preferences";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { open as openDialog, confirm } from "@tauri-apps/plugin-dialog";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   getAllThemes,
   getThemeByName,
@@ -45,6 +46,7 @@ interface Session {
   customName: boolean;
   cwd: string;
   args: string;
+  exited: boolean;
 }
 
 let sessions: Session[] = [];
@@ -58,6 +60,7 @@ const FONT_STEP = 2;
 let currentFontSize = DEFAULTS.fontSize;
 let currentThemePref: string = DEFAULTS.themePref;
 let currentArgs: string = DEFAULTS.defaultArgs;
+let spawning = false;
 
 function getTabsEl(): HTMLElement {
   return document.getElementById("tabs")!;
@@ -242,59 +245,77 @@ async function addSessionWithPicker(): Promise<void> {
 }
 
 async function addSession(cwd?: string): Promise<void> {
-  // If no cwd: inherit from active session, or prompt picker if no sessions exist
-  if (!cwd) {
-    const active = sessions.find((s) => s.id === activeSessionId);
-    if (active) {
-      cwd = active.cwd;
-    } else {
-      const picked = await pickFolder();
-      if (!picked) return;
-      cwd = picked;
+  if (spawning) return;
+  spawning = true;
+  try {
+    // If no cwd: inherit from active session, or prompt picker if no sessions exist
+    if (!cwd) {
+      const active = sessions.find((s) => s.id === activeSessionId);
+      if (active) {
+        cwd = active.cwd;
+      } else {
+        const picked = await pickFolder();
+        if (!picked) return;
+        cwd = picked;
+      }
     }
+
+    const terminalsEl = getTerminalsEl();
+    const tabsEl = getTabsEl();
+
+    const sessionId = crypto.randomUUID();
+    const xtermTheme = toXtermTheme(currentTheme);
+    const instance = createTerminal(
+      terminalsEl,
+      sessionId,
+      xtermTheme,
+      currentFontSize,
+    );
+
+    lastCwd = cwd;
+    hideWelcome();
+
+    try {
+      await spawnSession(
+        instance.terminal,
+        instance.terminal.cols,
+        instance.terminal.rows,
+        sessionId,
+        cwd,
+        currentArgs,
+      );
+    } catch (e) {
+      // Clean up orphaned DOM from the failed spawn
+      instance.terminal.dispose();
+      instance.container.remove();
+      if (sessions.length === 0) showWelcome();
+      console.error("Failed to spawn session:", e);
+      return;
+    }
+
+    const tabEl = createTabElement(sessionId, sessions.length + 1);
+    tabsEl.appendChild(tabEl);
+
+    const session: Session = {
+      id: sessionId,
+      instance,
+      tabEl,
+      customName: false,
+      cwd: cwd!,
+      args: currentArgs,
+      exited: false,
+    };
+    sessions.push(session);
+
+    connectSession(sessionId, instance.terminal, cwd, currentArgs, () => {
+      session.exited = true;
+    });
+
+    switchToSession(sessionId);
+    updateTabBarVisibility();
+  } finally {
+    spawning = false;
   }
-
-  const terminalsEl = getTerminalsEl();
-  const tabsEl = getTabsEl();
-
-  const sessionId = crypto.randomUUID();
-  const xtermTheme = toXtermTheme(currentTheme);
-  const instance = createTerminal(
-    terminalsEl,
-    sessionId,
-    xtermTheme,
-    currentFontSize,
-  );
-
-  lastCwd = cwd;
-  hideWelcome();
-
-  await spawnSession(
-    instance.terminal,
-    instance.terminal.cols,
-    instance.terminal.rows,
-    sessionId,
-    cwd,
-    currentArgs,
-  );
-
-  const tabEl = createTabElement(sessionId, sessions.length + 1);
-  tabsEl.appendChild(tabEl);
-
-  const session: Session = {
-    id: sessionId,
-    instance,
-    tabEl,
-    customName: false,
-    cwd: cwd!,
-    args: currentArgs,
-  };
-  sessions.push(session);
-
-  connectSession(sessionId, instance.terminal, cwd, currentArgs);
-
-  switchToSession(sessionId);
-  updateTabBarVisibility();
 }
 
 async function removeSession(sessionId: string): Promise<void> {
@@ -302,6 +323,14 @@ async function removeSession(sessionId: string): Promise<void> {
   if (idx === -1) return;
 
   const session = sessions[idx];
+
+  if (!session.exited) {
+    const confirmed = await confirm(
+      "Close this tab? The running process will be terminated.",
+      { title: "Quell" },
+    );
+    if (!confirmed) return;
+  }
 
   disconnectSession(sessionId, session.instance.terminal);
 
@@ -433,6 +462,20 @@ document.addEventListener("DOMContentLoaded", async () => {
   initSearchUI();
   initPaletteUI();
 
+  // Confirm before closing window with running sessions
+  getCurrentWindow().onCloseRequested(async (event) => {
+    const runningSessions = sessions.filter((s) => !s.exited);
+    if (runningSessions.length > 0) {
+      const msg = runningSessions.length === 1
+        ? "Close the active session?"
+        : `Close ${runningSessions.length} active sessions?`;
+      const confirmed = await confirm(msg, { title: "Quell" });
+      if (!confirmed) {
+        event.preventDefault();
+      }
+    }
+  });
+
   // Global key handler — intercepts browser/WebView2 defaults before they fire.
   // Must preventDefault here because xterm's attachCustomKeyEventHandler
   // only works when the terminal textarea is focused.
@@ -482,7 +525,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Register palette actions
   const themeActions = getAllThemes().map((t) => ({
     id: `theme-${t.name}`,
-    label: t.displayName,
+    label: () =>
+      currentThemePref === t.name
+        ? `${t.displayName} (currently active)`
+        : t.displayName,
     category: "Theme",
     execute: () => {
       applyTheme(t.name);

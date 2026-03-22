@@ -59,6 +59,10 @@ Multiple sessions in one window. Each tab is an independent terminal session. `C
 
 `Ctrl+=` / `Ctrl+-` / `Ctrl+0` — font size adjusts across the entire UI (terminal, tabs, search bar, palette). Persisted across restarts.
 
+### Voice Input
+
+Right-click in the terminal and select **More tools → Voice typing** (or press `Win+H`) to activate Windows' built-in speech-to-text. Dictate commands, describe changes, or narrate prompts — directly into your AI CLI session. No extensions, no SaaS subscriptions.
+
 ### Project Folder Picker
 
 On launch, choose your project folder. New tabs inherit the directory. Switch projects via the palette with "New Tab (Choose Folder)".

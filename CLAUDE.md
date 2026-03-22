@@ -101,6 +101,17 @@ cargo clippy --lib --features recording  # With recording — no warnings
 4. Commit — pre-commit hook enforces `cargo test` + `cargo clippy`
 5. Live-prove — hooks prompt for automated/automatable/manual categorization
 
+## Live-Proving Standard
+
+Every live-proving checklist item must include all four parts:
+
+1. **Setup** — what state to start from (e.g., "launch the app fresh with no tabs open")
+2. **Action** — exact steps: what to click, type, or key-combo to press
+3. **Expected result** — what you should see on screen, in devtools console, or in logs
+4. **Pass/fail** — what constitutes a failure
+
+Do not write vague steps like "verify error handling works". Write concrete steps like "click Open Folder → navigate to `C:\nonexistent` → click Select Folder → observe welcome screen reappears with no orphaned blank tab".
+
 ## Automated Hooks (`.claude/hooks/`)
 
 These fire automatically — no manual action needed:

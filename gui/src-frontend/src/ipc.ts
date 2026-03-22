@@ -38,51 +38,70 @@ export function connectSession(
   terminal: Terminal,
   cwd?: string,
   args?: string,
+  onExit?: () => void,
 ): void {
   // Dispose previous handlers on this terminal (handles restart case)
   disposeTerminalHandlers(terminal);
 
   // Handle child exit — offer restart in same directory
   exitHandlers.set(sessionId, (exitCode) => {
+    onExit?.();
     terminal.writeln(
       `\r\n\x1b[90m[process exited with code ${exitCode}]\x1b[0m`,
     );
     terminal.writeln(`\r\n\x1b[90mPress any key to restart...\x1b[0m`);
 
-    const disposable = terminal.onData(async () => {
-      disposable.dispose();
-      terminal.reset();
-      try {
-        await spawnSession(
-          terminal,
-          terminal.cols,
-          terminal.rows,
-          sessionId,
-          cwd,
-          args,
-        );
-        connectSession(sessionId, terminal, cwd, args);
-      } catch (e) {
-        terminal.writeln(`\r\n\x1b[31mFailed to restart: ${e}\x1b[0m`);
-      }
-    });
+    const offerRestart = () => {
+      const disposable = terminal.onData(async () => {
+        disposable.dispose();
+        terminal.reset();
+        try {
+          await spawnSession(
+            terminal,
+            terminal.cols,
+            terminal.rows,
+            sessionId,
+            cwd,
+            args,
+          );
+          connectSession(sessionId, terminal, cwd, args, onExit);
+        } catch (e) {
+          terminal.writeln(`\r\n\x1b[31m${friendlySpawnError(e)}\x1b[0m`);
+          terminal.writeln(
+            `\r\n\x1b[90mPress any key to try again...\x1b[0m`,
+          );
+          offerRestart();
+        }
+      });
+    };
+    offerRestart();
   });
 
   // Forward keyboard input to backend (UTF-8-safe encoding)
   const dataDisposable = terminal.onData((data) => {
     const encoded = btoa(unescape(encodeURIComponent(data)));
-    invoke("write_input", { sessionId, data: encoded });
+    invoke("write_input", { sessionId, data: encoded }).catch((err) => {
+      if (!(typeof err === "string" && err.includes("no such session"))) {
+        console.warn(`[${sessionId}] write_input failed:`, err);
+      }
+    });
   });
 
   // Forward resize events to backend
   const resizeDisposable = terminal.onResize(({ cols, rows }) => {
-    invoke("resize_pty", { sessionId, cols, rows });
+    invoke("resize_pty", { sessionId, cols, rows }).catch((err) => {
+      if (!(typeof err === "string" && err.includes("no such session"))) {
+        console.warn(`[${sessionId}] resize_pty failed:`, err);
+      }
+    });
   });
 
   // Register paste callback with the correct session ID
   setPasteCallback(terminal, (text: string) => {
     const encoded = btoa(unescape(encodeURIComponent(text)));
-    invoke("write_input", { sessionId, data: encoded });
+    invoke("write_input", { sessionId, data: encoded }).catch((err) => {
+      console.warn(`[${sessionId}] paste failed:`, err);
+    });
   });
 
   // Track disposables for cleanup
@@ -141,4 +160,16 @@ export async function spawnSession(
 /// Close a session by session_id.
 export async function closeSession(sessionId: string): Promise<void> {
   await invoke("close_session", { sessionId });
+}
+
+/// Map raw backend error strings to user-friendly messages.
+function friendlySpawnError(raw: unknown): string {
+  const msg = String(raw);
+  if (msg.includes("failed to spawn")) {
+    const match = msg.match(/failed to spawn:\s*(.+)/);
+    return match ? `Could not start process: ${match[1]}` : "Could not start process.";
+  }
+  if (msg.includes("no such session")) return "Session no longer exists.";
+  if (msg.includes("input channel closed")) return "Session connection lost.";
+  return `Restart failed: ${msg}`;
 }

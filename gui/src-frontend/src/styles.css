@@ -176,7 +176,7 @@ body {
 }
 
 .welcome-chevron {
-  color: var(--q-text);
+  color: var(--q-accent);
   font-size: calc(24px * var(--q-ui-scale));
   font-weight: 700;
   line-height: 1;

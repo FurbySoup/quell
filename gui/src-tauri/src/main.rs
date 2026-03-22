@@ -212,13 +212,52 @@ fn spawn_shell(
     // No other thread accesses the session handles.
     let send_proxy = SendProxy(proxy);
     let sid = session_id.clone();
+    let app_handle3 = app.clone();
     thread::Builder::new()
         .name(format!("proxy-runner-{sid}"))
         .spawn(move || {
             let proxy = send_proxy;
-            match proxy.0.run() {
-                Ok(code) => info!(exit_code = code, session_id = %sid, "proxy finished"),
-                Err(e) => error!(error = %e, session_id = %sid, "proxy error"),
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                proxy.0.run()
+            }));
+
+            let (should_emit, code) = match result {
+                Ok(Ok(code)) => {
+                    info!(exit_code = code, session_id = %sid, "proxy finished");
+                    (false, code) // Normal exit — event_forwarder handles this
+                }
+                Ok(Err(e)) => {
+                    error!(error = %e, session_id = %sid, "proxy error");
+                    (true, 1)
+                }
+                Err(panic_info) => {
+                    let msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                        s.to_string()
+                    } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                        s.clone()
+                    } else {
+                        "unknown panic".to_string()
+                    };
+                    error!(session_id = %sid, panic = %msg, "proxy thread panicked");
+                    (true, 1)
+                }
+            };
+
+            // Emit synthetic child-exited only if event_forwarder hasn't already
+            if should_emit {
+                let still_present = if let Some(state) = app_handle3.try_state::<AppState>() {
+                    let mut sessions = state.sessions.lock()
+                        .unwrap_or_else(|e| e.into_inner());
+                    sessions.remove(&sid).is_some()
+                } else {
+                    false
+                };
+                if still_present {
+                    let _ = app_handle3.emit("child-exited", ChildExited {
+                        session_id: sid.clone(),
+                        exit_code: code,
+                    });
+                }
             }
         })
         .map_err(|e| error!(error = %e, "failed to spawn thread"))
@@ -307,8 +346,8 @@ fn main() {
             close_session,
         ])
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { .. } = event {
-                info!("window close requested, cleaning up");
+            if let tauri::WindowEvent::Destroyed = event {
+                info!("window destroyed, cleaning up sessions");
                 if let Some(state) = window.try_state::<AppState>() {
                     let mut sessions = state.sessions.lock()
                         .unwrap_or_else(|e: std::sync::PoisonError<_>| e.into_inner());
