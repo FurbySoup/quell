@@ -97,7 +97,7 @@ pub struct ChannelSink {
 
 impl ChannelSink {
     pub fn new() -> (Self, crossbeam_channel::Receiver<Vec<u8>>) {
-        let (tx, rx) = crossbeam_channel::unbounded();
+        let (tx, rx) = crossbeam_channel::bounded(256);
         (Self { tx }, rx)
     }
 }

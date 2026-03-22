@@ -36,12 +36,12 @@ export async function initIpcListeners(): Promise<void> {
 export function connectSession(
   sessionId: string,
   terminal: Terminal,
-  defaultCommand?: string,
+  cwd?: string,
 ): void {
   // Dispose previous handlers on this terminal (handles restart case)
   disposeTerminalHandlers(terminal);
 
-  // Handle child exit — offer restart
+  // Handle child exit — offer restart in same directory
   exitHandlers.set(sessionId, (exitCode) => {
     terminal.writeln(
       `\r\n\x1b[90m[process exited with code ${exitCode}]\x1b[0m`,
@@ -52,24 +52,23 @@ export function connectSession(
       disposable.dispose();
       terminal.reset();
       try {
-        const newId = await spawnSession(
+        await spawnSession(
           terminal,
-          defaultCommand,
           terminal.cols,
           terminal.rows,
           sessionId,
+          cwd,
         );
-        // Re-register handlers for the re-spawned session
-        connectSession(newId, terminal, defaultCommand);
+        connectSession(sessionId, terminal, cwd);
       } catch (e) {
         terminal.writeln(`\r\n\x1b[31mFailed to restart: ${e}\x1b[0m`);
       }
     });
   });
 
-  // Forward keyboard input to backend
+  // Forward keyboard input to backend (UTF-8-safe encoding)
   const dataDisposable = terminal.onData((data) => {
-    const encoded = btoa(data);
+    const encoded = btoa(unescape(encodeURIComponent(data)));
     invoke("write_input", { sessionId, data: encoded });
   });
 
@@ -80,7 +79,7 @@ export function connectSession(
 
   // Register paste callback with the correct session ID
   setPasteCallback(terminal, (text: string) => {
-    const encoded = btoa(text);
+    const encoded = btoa(unescape(encodeURIComponent(text)));
     invoke("write_input", { sessionId, data: encoded });
   });
 
@@ -113,16 +112,14 @@ export function disconnectSession(
 
 /// Spawn a terminal session with a per-session output Channel.
 /// The Channel delivers raw bytes directly as ArrayBuffer — no base64 encoding.
-/// Returns the session_id.
+/// The backend reads the command from config — frontend cannot specify it.
 export async function spawnSession(
   terminal: Terminal,
-  command?: string,
   cols?: number,
   rows?: number,
   sessionId?: string,
+  cwd?: string,
 ): Promise<string> {
-  // Create a per-session Channel for streaming output.
-  // Tauri delivers Vec<u8> as ArrayBuffer to the onmessage callback.
   const onOutput = new Channel<ArrayBuffer>();
   onOutput.onmessage = (data) => {
     terminal.write(new Uint8Array(data));
@@ -130,10 +127,10 @@ export async function spawnSession(
 
   return await invoke<string>("spawn_shell", {
     onOutput,
-    command,
     cols,
     rows,
     sessionId,
+    cwd,
   });
 }
 

@@ -200,7 +200,14 @@ export function createTerminal(
 
   terminal.loadAddon(
     new WebLinksAddon((_event, uri) => {
-      open(uri);
+      try {
+        const url = new URL(uri);
+        if (url.protocol === "https:" || url.protocol === "http:") {
+          open(uri);
+        }
+      } catch {
+        // Invalid URL, ignore
+      }
     }),
   );
 

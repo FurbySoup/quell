@@ -149,6 +149,60 @@ body {
   background: var(--q-scrollbar-thumb-hover);
 }
 
+/* Welcome screen */
+#welcome-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.welcome-content {
+  text-align: center;
+}
+
+.welcome-content h1 {
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: calc(28px * var(--q-ui-scale));
+  font-weight: 400;
+  color: var(--q-text);
+  margin: 0 0 8px;
+  letter-spacing: 0.05em;
+}
+
+.welcome-subtitle {
+  font-family: system-ui, sans-serif;
+  font-size: calc(13px * var(--q-ui-scale));
+  color: var(--q-text-muted);
+  margin: 0 0 32px;
+}
+
+.welcome-btn {
+  background: var(--q-accent);
+  color: var(--q-bg);
+  border: none;
+  font-family: system-ui, sans-serif;
+  font-size: calc(14px * var(--q-ui-scale));
+  font-weight: 500;
+  padding: calc(10px * var(--q-ui-scale)) calc(24px * var(--q-ui-scale));
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.welcome-btn:hover {
+  opacity: 0.85;
+}
+
+.welcome-hint {
+  font-family: system-ui, sans-serif;
+  font-size: calc(11px * var(--q-ui-scale));
+  color: var(--q-text-muted);
+  margin: 16px 0 0;
+  opacity: 0.7;
+}
+
 /* Search overlay */
 #search-overlay {
   position: absolute;

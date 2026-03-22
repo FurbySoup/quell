@@ -178,7 +178,7 @@ fn setup_proxy(command_line: &str) -> Result<(i16, i16, ConsoleMode, ConPtySessi
 
     install_panic_hook();
 
-    let session = match ConPtySession::spawn(command_line, cols, rows) {
+    let session = match ConPtySession::spawn(command_line, cols, rows, None) {
         Ok(s) => s,
         Err(e) => {
             let _ = console_mode.restore();

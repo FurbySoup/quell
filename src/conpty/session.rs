@@ -26,8 +26,8 @@ impl ConPtySession {
     ///
     /// `command` is the full command line (e.g. "cmd.exe" or "claude --flag").
     /// `cols` and `rows` set the initial terminal dimensions.
-    pub fn spawn(command: &str, cols: i16, rows: i16) -> Result<Self> {
-        info!(command, cols, rows, "creating ConPTY session");
+    pub fn spawn(command: &str, cols: i16, rows: i16, cwd: Option<&str>) -> Result<Self> {
+        info!(command, cols, rows, cwd = ?cwd, "creating ConPTY session");
 
         // Create the pipe pairs
         let (conpty_input_read, proxy_input_write, proxy_output_read, conpty_output_write) =
@@ -44,7 +44,7 @@ impl ConPtySession {
 
         // Spawn the child process
         let (process_handle, thread_handle, process_id) =
-            sys::create_process_with_pseudo_console(hpc, command)?;
+            sys::create_process_with_pseudo_console(hpc, command, cwd)?;
 
         info!(pid = process_id, command, "child process spawned");
 
@@ -149,7 +149,7 @@ mod tests {
 
     #[test]
     fn test_spawn_succeeds() {
-        let session = ConPtySession::spawn("cmd.exe /c echo hello", 80, 25)
+        let session = ConPtySession::spawn("cmd.exe /c echo hello", 80, 25, None)
             .expect("failed to spawn");
         assert!(session.process_id() > 0);
         // Session drops here, closing ConPTY cleanly
@@ -157,7 +157,7 @@ mod tests {
 
     #[test]
     fn test_resize() {
-        let mut session = ConPtySession::spawn("cmd.exe /c timeout /t 2 /nobreak >nul", 80, 25)
+        let mut session = ConPtySession::spawn("cmd.exe /c timeout /t 2 /nobreak >nul", 80, 25, None)
             .expect("failed to spawn");
 
         // Resize should succeed
@@ -173,7 +173,7 @@ mod tests {
     #[test]
     fn test_take_io() {
         let mut session =
-            ConPtySession::spawn("cmd.exe /c echo test", 80, 25).expect("failed to spawn");
+            ConPtySession::spawn("cmd.exe /c echo test", 80, 25, None).expect("failed to spawn");
 
         // First take should succeed
         let io = session.take_io();
@@ -187,7 +187,7 @@ mod tests {
     #[test]
     fn test_child_exit_code() {
         let mut session =
-            ConPtySession::spawn("cmd.exe /c exit 42", 80, 25).expect("failed to spawn");
+            ConPtySession::spawn("cmd.exe /c exit 42", 80, 25, None).expect("failed to spawn");
         let (_input, output) = session.take_io().expect("take_io failed");
 
         // Drain output in background

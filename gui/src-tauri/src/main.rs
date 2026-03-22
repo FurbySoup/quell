@@ -67,24 +67,26 @@ fn spawn_shell(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     on_output: Channel<Vec<u8>>,
-    command: Option<String>,
     cols: Option<i16>,
     rows: Option<i16>,
     session_id: Option<String>,
+    cwd: Option<String>,
 ) -> Result<String, String> {
     let session_id = session_id.unwrap_or_else(|| state.next_session_id());
 
-    let command = command.unwrap_or_else(|| "cmd.exe".into());
+    let config = AppConfig::load(&Default::default()).unwrap_or_default();
+    let command = config.default_command.clone();
     let cols = cols.unwrap_or(120);
     let rows = rows.unwrap_or(30);
 
+    // Default CWD to user's home directory, not the app's working directory
+    let cwd = cwd.or_else(|| std::env::var("USERPROFILE").ok());
+
     let tool = ToolKind::detect(&command);
-    info!(session_id = %session_id, command = %command, cols, rows, tool = %tool, "spawning shell for GUI");
+    info!(session_id = %session_id, command = %command, cols, rows, tool = %tool, cwd = ?cwd, "spawning shell for GUI");
 
-    let session = ConPtySession::spawn(&command, cols, rows)
+    let session = ConPtySession::spawn(&command, cols, rows, cwd.as_deref())
         .map_err(|e| format!("failed to spawn: {e}"))?;
-
-    let config = AppConfig::default();
 
     // Create channels for external I/O (GUI mode)
     let (input_tx, input_rx): (Sender<Vec<u8>>, Receiver<Vec<u8>>) =
@@ -245,6 +247,8 @@ fn resize_pty(
     cols: i16,
     rows: i16,
 ) -> Result<(), String> {
+    let cols = cols.clamp(1, 500);
+    let rows = rows.clamp(1, 200);
     let sessions = state.sessions.lock().map_err(|e| e.to_string())?;
     let session = sessions.get(&session_id).ok_or("no such session")?;
     session
@@ -268,12 +272,6 @@ fn close_session(
     }
 }
 
-/// Return the default command from AppConfig (loaded from config file).
-#[tauri::command]
-fn get_default_command() -> String {
-    let config = AppConfig::load(&Default::default()).unwrap_or_default();
-    config.default_command
-}
 
 fn main() {
     // Initialize tracing to a log file for GUI debugging
@@ -291,6 +289,7 @@ fn main() {
     info!(version = env!("CARGO_PKG_VERSION"), "quell GUI starting");
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .manage(AppState::new())
@@ -299,7 +298,6 @@ fn main() {
             write_input,
             resize_pty,
             close_session,
-            get_default_command,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {

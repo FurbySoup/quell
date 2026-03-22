@@ -10,6 +10,7 @@ const actions: PaletteAction[] = [];
 let isOpen = false;
 let selectedIndex = 0;
 let filteredActions: PaletteAction[] = [];
+let usingKeyboard = false;
 
 const overlayEl = () => document.getElementById("palette-overlay")!;
 const inputEl = () =>
@@ -106,8 +107,14 @@ function renderResults(): void {
     });
 
     item.addEventListener("mouseenter", () => {
-      selectedIndex = i;
-      updateSelection();
+      if (!usingKeyboard) {
+        selectedIndex = i;
+        updateSelection();
+      }
+    });
+
+    item.addEventListener("mousemove", () => {
+      usingKeyboard = false;
     });
 
     container.appendChild(item);
@@ -139,6 +146,7 @@ export function initPaletteUI(): void {
 
     if (e.key === "ArrowDown") {
       e.preventDefault();
+      usingKeyboard = true;
       if (selectedIndex < filteredActions.length - 1) {
         selectedIndex++;
         updateSelection();
@@ -148,6 +156,7 @@ export function initPaletteUI(): void {
 
     if (e.key === "ArrowUp") {
       e.preventDefault();
+      usingKeyboard = true;
       if (selectedIndex > 0) {
         selectedIndex--;
         updateSelection();

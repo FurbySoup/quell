@@ -334,7 +334,7 @@ mod proxy_pipeline_tests {
 
         // First session
         let config = AppConfig::default();
-        let session = ConPtySession::spawn("cmd.exe /c echo first", 80, 25)
+        let session = ConPtySession::spawn("cmd.exe /c echo first", 80, 25, None)
             .expect("failed to spawn first session");
 
         let (sink, _buf) = quell::proxy::output_sink::BufferSink::new();
@@ -353,7 +353,7 @@ mod proxy_pipeline_tests {
 
         // Second session — simulates restart
         let config2 = AppConfig::default();
-        let session2 = ConPtySession::spawn("cmd.exe /c echo second", 80, 25)
+        let session2 = ConPtySession::spawn("cmd.exe /c echo second", 80, 25, None)
             .expect("failed to spawn second session");
 
         let (sink2, _buf2) = quell::proxy::output_sink::BufferSink::new();
@@ -372,7 +372,7 @@ mod proxy_pipeline_tests {
         use quell::proxy::Proxy;
 
         let config = AppConfig::default();
-        let session = ConPtySession::spawn("cmd.exe /c echo proxy-test", 80, 25)
+        let session = ConPtySession::spawn("cmd.exe /c echo proxy-test", 80, 25, None)
             .expect("failed to spawn");
 
         let (sink, _buf) = quell::proxy::output_sink::BufferSink::new();
@@ -396,7 +396,7 @@ mod proxy_pipeline_tests {
         use quell::proxy::Proxy;
 
         let config = AppConfig::default();
-        let session = ConPtySession::spawn("cmd.exe /c exit 42", 80, 25)
+        let session = ConPtySession::spawn("cmd.exe /c exit 42", 80, 25, None)
             .expect("failed to spawn");
 
         let (sink, _buf) = quell::proxy::output_sink::BufferSink::new();
@@ -421,6 +421,7 @@ mod proxy_pipeline_tests {
             "cmd.exe /c \"for /L %i in (1,1,100) do @echo line%i\"",
             120,
             30,
+            None,
         )
         .expect("failed to spawn");
 

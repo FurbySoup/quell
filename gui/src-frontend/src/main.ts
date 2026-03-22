@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import {
   createTerminal,
   activateTerminal,
@@ -18,6 +17,7 @@ import {
   savePreference,
   DEFAULTS,
 } from "./preferences";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
   getAllThemes,
   getThemeByName,
@@ -43,12 +43,12 @@ interface Session {
   instance: TerminalInstance;
   tabEl: HTMLDivElement;
   customName: boolean;
+  cwd: string;
 }
 
 let sessions: Session[] = [];
 let activeSessionId: string | null = null;
 let currentTheme: QuellTheme = getThemeByName(DEFAULTS.themePref);
-let defaultCommand: string | undefined;
 
 // Zoom state
 const MIN_FONT_SIZE = 8;
@@ -69,7 +69,16 @@ function createTabElement(sessionId: string, index: number): HTMLDivElement {
   const tab = document.createElement("div");
   tab.className = "tab";
   tab.dataset.sessionId = sessionId;
-  tab.innerHTML = `<span class="label">Tab ${index}</span><span class="close">\u00d7</span>`;
+
+  const label = document.createElement("span");
+  label.className = "label";
+  label.textContent = `Tab ${index}`;
+  tab.appendChild(label);
+
+  const close = document.createElement("span");
+  close.className = "close";
+  close.textContent = "\u00d7";
+  tab.appendChild(close);
 
   tab.addEventListener("click", (e) => {
     const target = e.target as HTMLElement;
@@ -80,7 +89,6 @@ function createTabElement(sessionId: string, index: number): HTMLDivElement {
     }
   });
 
-  const label = tab.querySelector(".label")!;
   label.addEventListener("dblclick", (e) => {
     e.stopPropagation();
     const labelEl = e.target as HTMLElement;
@@ -133,28 +141,100 @@ function switchToSession(sessionId: string): void {
   }
 }
 
-async function addSession(): Promise<void> {
+async function pickFolder(): Promise<string | null> {
+  return await openDialog({
+    directory: true,
+    multiple: false,
+    title: "Choose project folder",
+    defaultPath: lastCwd,
+  });
+}
+
+let lastCwd: string | undefined;
+
+function showWelcome(): void {
+  const terminalsEl = getTerminalsEl();
+  let welcome = document.getElementById("welcome-screen");
+  if (welcome) return;
+
+  welcome = document.createElement("div");
+  welcome.id = "welcome-screen";
+  welcome.innerHTML = "";
+
+  const content = document.createElement("div");
+  content.className = "welcome-content";
+
+  const title = document.createElement("h1");
+  title.textContent = "> Quell";
+  content.appendChild(title);
+
+  const subtitle = document.createElement("p");
+  subtitle.className = "welcome-subtitle";
+  subtitle.textContent = "Terminal for AI CLI tools";
+  content.appendChild(subtitle);
+
+  const btn = document.createElement("button");
+  btn.className = "welcome-btn";
+  btn.textContent = "Open Folder";
+  btn.addEventListener("click", () => {
+    addSession();
+  });
+  content.appendChild(btn);
+
+  const hint = document.createElement("p");
+  hint.className = "welcome-hint";
+  hint.textContent = "Choose a project folder to start a session";
+  content.appendChild(hint);
+
+  welcome.appendChild(content);
+  terminalsEl.appendChild(welcome);
+}
+
+function hideWelcome(): void {
+  document.getElementById("welcome-screen")?.remove();
+}
+
+async function addSessionWithPicker(): Promise<void> {
+  const picked = await pickFolder();
+  if (!picked) return;
+  await addSession(picked);
+}
+
+async function addSession(cwd?: string): Promise<void> {
+  // If no cwd: inherit from active session, or prompt picker if no sessions exist
+  if (!cwd) {
+    const active = sessions.find((s) => s.id === activeSessionId);
+    if (active) {
+      cwd = active.cwd;
+    } else {
+      const picked = await pickFolder();
+      if (!picked) return;
+      cwd = picked;
+    }
+  }
+
   const terminalsEl = getTerminalsEl();
   const tabsEl = getTabsEl();
 
-  const tempId = `pending-${Date.now()}`;
+  const sessionId = crypto.randomUUID();
   const xtermTheme = toXtermTheme(currentTheme);
   const instance = createTerminal(
     terminalsEl,
-    tempId,
+    sessionId,
     xtermTheme,
     currentFontSize,
   );
 
-  const sessionId = await spawnSession(
+  lastCwd = cwd;
+  hideWelcome();
+
+  await spawnSession(
     instance.terminal,
-    defaultCommand,
     instance.terminal.cols,
     instance.terminal.rows,
+    sessionId,
+    cwd,
   );
-
-  instance.sessionId = sessionId;
-  instance.container.dataset.sessionId = sessionId;
 
   const tabEl = createTabElement(sessionId, sessions.length + 1);
   tabsEl.appendChild(tabEl);
@@ -164,10 +244,11 @@ async function addSession(): Promise<void> {
     instance,
     tabEl,
     customName: false,
+    cwd: cwd!,
   };
   sessions.push(session);
 
-  connectSession(sessionId, instance.terminal, defaultCommand);
+  connectSession(sessionId, instance.terminal, cwd);
 
   switchToSession(sessionId);
   updateTabBarVisibility();
@@ -304,12 +385,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   const themeName = resolveThemeName(currentThemePref);
   applyTheme(themeName);
 
-  try {
-    defaultCommand = await invoke<string>("get_default_command");
-  } catch (e) {
-    console.warn("get_default_command failed:", e);
-  }
-
   // Initialize overlay UIs
   initSearchUI();
   initPaletteUI();
@@ -380,6 +455,12 @@ document.addEventListener("DOMContentLoaded", async () => {
       execute: () => addSession(),
     },
     {
+      id: "new-tab-folder",
+      label: "New Tab (Choose Folder)",
+      category: "Tabs",
+      execute: () => addSessionWithPicker(),
+    },
+    {
       id: "close-tab",
       label: "Close Tab",
       category: "Tabs",
@@ -448,8 +529,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Initialize global IPC listeners
   await initIpcListeners();
 
-  // Create first tab
-  await addSession();
+  // Show welcome state — no session until user picks a folder
+  showWelcome();
 
   // New tab button
   document.getElementById("tab-new")!.addEventListener("click", () => {

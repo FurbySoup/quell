@@ -8,6 +8,7 @@
     "core:window:default",
     "core:window:allow-close",
     "core:window:allow-set-title",
+    "dialog:allow-open",
     "shell:allow-open",
     "store:default"
   ]

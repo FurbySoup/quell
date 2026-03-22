@@ -155,8 +155,9 @@ pub(super) fn get_console_screen_buffer_info(
 pub(super) fn create_process_with_pseudo_console(
     hpc: HPCON,
     command_line: &str,
+    cwd: Option<&str>,
 ) -> Result<(HANDLE, HANDLE, u32)> {
-    debug!(command_line, "spawning process with pseudoconsole");
+    debug!(command_line, cwd = ?cwd, "spawning process with pseudoconsole");
     // Allocate the attribute list — first call gets the required size
     let mut attr_list_size: usize = 0;
     unsafe {
@@ -214,6 +215,17 @@ pub(super) fn create_process_with_pseudo_console(
 
     let mut proc_info = PROCESS_INFORMATION::default();
 
+    // Convert CWD to wide string if provided
+    let cwd_wide: Option<Vec<u16>> = cwd.map(|d| {
+        let mut w: Vec<u16> = d.encode_utf16().collect();
+        w.push(0);
+        w
+    });
+    let cwd_pcwstr = match &cwd_wide {
+        Some(w) => windows::core::PCWSTR(w.as_ptr()),
+        None => windows::core::PCWSTR::null(),
+    };
+
     let result = unsafe {
         CreateProcessW(
             None,
@@ -224,7 +236,7 @@ pub(super) fn create_process_with_pseudo_console(
             windows::Win32::System::Threading::EXTENDED_STARTUPINFO_PRESENT
                 | windows::Win32::System::Threading::CREATE_UNICODE_ENVIRONMENT,
             None,
-            None,
+            cwd_pcwstr,
             &startup_info.StartupInfo,
             &mut proc_info,
         )
