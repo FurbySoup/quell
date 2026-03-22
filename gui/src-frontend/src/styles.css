@@ -149,7 +149,7 @@ body {
   background: var(--q-scrollbar-thumb-hover);
 }
 
-/* Welcome screen */
+/* Welcome screen — terminal empty state */
 #welcome-screen {
   position: absolute;
   inset: 0;
@@ -160,47 +160,105 @@ body {
 }
 
 .welcome-content {
-  text-align: center;
-}
-
-.welcome-content h1 {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: calc(2px * var(--q-ui-scale));
   font-family: "Cascadia Code", "Consolas", monospace;
-  font-size: calc(28px * var(--q-ui-scale));
-  font-weight: 400;
-  color: var(--q-text);
-  margin: 0 0 8px;
-  letter-spacing: 0.05em;
 }
 
-.welcome-subtitle {
-  font-family: system-ui, sans-serif;
+/* Prompt line: > quell — matches brand mark */
+.welcome-prompt {
+  display: flex;
+  align-items: flex-end;
+  gap: calc(2px * var(--q-ui-scale));
+  margin-bottom: calc(8px * var(--q-ui-scale));
+}
+
+.welcome-chevron {
+  color: var(--q-text);
+  font-size: calc(24px * var(--q-ui-scale));
+  font-weight: 700;
+  line-height: 1;
+  align-self: flex-start;
+  margin-top: calc(-2px * var(--q-ui-scale));
+}
+
+.welcome-title {
+  color: var(--q-text);
+  font-size: calc(36px * var(--q-ui-scale));
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 0.85;
+}
+
+/* Separator line */
+.welcome-rule {
+  width: 100%;
+  height: 1px;
+  background: var(--q-border);
+  margin: calc(8px * var(--q-ui-scale)) 0;
+}
+
+/* Info lines — styled like terminal output */
+.welcome-line {
   font-size: calc(13px * var(--q-ui-scale));
   color: var(--q-text-muted);
-  margin: 0 0 32px;
+  line-height: calc(22px * var(--q-ui-scale));
 }
 
-.welcome-btn {
-  background: var(--q-accent);
-  color: var(--q-bg);
-  border: none;
-  font-family: system-ui, sans-serif;
-  font-size: calc(14px * var(--q-ui-scale));
-  font-weight: 500;
-  padding: calc(10px * var(--q-ui-scale)) calc(24px * var(--q-ui-scale));
+.welcome-line-small {
+  font-size: calc(9px * var(--q-ui-scale));
+  color: var(--q-text-muted);
+  line-height: calc(16px * var(--q-ui-scale));
+  margin-top: calc(2px * var(--q-ui-scale));
+  margin-bottom: 0;
+}
+
+/* Command button — looks like a clickable terminal command */
+.welcome-cmd {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(6px * var(--q-ui-scale));
+  background: none;
+  border: 1px solid var(--q-border);
+  color: var(--q-text);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: calc(13px * var(--q-ui-scale));
+  padding: calc(6px * var(--q-ui-scale)) calc(12px * var(--q-ui-scale));
+  margin-top: calc(1px * var(--q-ui-scale));
   cursor: pointer;
-  transition: opacity 0.15s;
+  transition: border-color 0.15s, color 0.15s;
 }
 
-.welcome-btn:hover {
-  opacity: 0.85;
+.welcome-cmd:hover {
+  border-color: var(--q-accent);
+  color: var(--q-accent);
 }
 
-.welcome-hint {
-  font-family: system-ui, sans-serif;
+.welcome-cmd-chevron {
+  color: var(--q-accent);
+}
+
+/* Shortcut hints */
+.welcome-shortcuts {
+  display: flex;
+  flex-direction: column;
+  gap: calc(2px * var(--q-ui-scale));
+  margin-top: calc(16px * var(--q-ui-scale));
+}
+
+.welcome-shortcut {
   font-size: calc(11px * var(--q-ui-scale));
   color: var(--q-text-muted);
-  margin: 16px 0 0;
-  opacity: 0.7;
+  opacity: 0.6;
+  line-height: calc(18px * var(--q-ui-scale));
+}
+
+.welcome-shortcut kbd {
+  font-family: inherit;
+  color: var(--q-text);
+  opacity: 0.8;
 }
 
 /* Search overlay */

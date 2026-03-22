@@ -159,33 +159,72 @@ function showWelcome(): void {
 
   welcome = document.createElement("div");
   welcome.id = "welcome-screen";
-  welcome.innerHTML = "";
 
   const content = document.createElement("div");
   content.className = "welcome-content";
 
-  const title = document.createElement("h1");
-  title.textContent = "> Quell";
-  content.appendChild(title);
+  // > quell prompt line
+  const prompt = document.createElement("div");
+  prompt.className = "welcome-prompt";
+  const chevron = document.createElement("span");
+  chevron.className = "welcome-chevron";
+  chevron.textContent = ">";
+  prompt.appendChild(chevron);
+  const title = document.createElement("span");
+  title.className = "welcome-title";
+  title.textContent = "quell";
+  prompt.appendChild(title);
+  content.appendChild(prompt);
 
-  const subtitle = document.createElement("p");
-  subtitle.className = "welcome-subtitle";
-  subtitle.textContent = "Terminal for AI CLI tools";
-  content.appendChild(subtitle);
+  // Separator
+  const rule = document.createElement("div");
+  rule.className = "welcome-rule";
+  content.appendChild(rule);
 
-  const btn = document.createElement("button");
-  btn.className = "welcome-btn";
-  btn.textContent = "Open Folder";
-  btn.addEventListener("click", () => {
-    addSession();
-  });
-  content.appendChild(btn);
+  // Info lines
+  const line1 = document.createElement("div");
+  line1.className = "welcome-line";
+  line1.textContent = "terminal for AI CLI tools";
+  content.appendChild(line1);
 
-  const hint = document.createElement("p");
-  hint.className = "welcome-hint";
-  hint.textContent = "Choose a project folder to start a session";
-  content.appendChild(hint);
+  const line2 = document.createElement("div");
+  line2.className = "welcome-line-small";
+  line2.textContent = "select a project folder to begin";
+  content.appendChild(line2);
 
+  // Command button
+  const cmd = document.createElement("button");
+  cmd.className = "welcome-cmd";
+  const cmdChevron = document.createElement("span");
+  cmdChevron.className = "welcome-cmd-chevron";
+  cmdChevron.textContent = ">";
+  cmd.appendChild(cmdChevron);
+  cmd.appendChild(document.createTextNode(" open folder"));
+  cmd.addEventListener("click", () => addSession());
+  content.appendChild(cmd);
+
+  // Shortcut hints
+  const shortcuts = document.createElement("div");
+  shortcuts.className = "welcome-shortcuts";
+
+  const hint1 = document.createElement("div");
+  hint1.className = "welcome-shortcut";
+  hint1.innerHTML = "";
+  const kbd1 = document.createElement("kbd");
+  kbd1.textContent = "Ctrl+Shift+P";
+  hint1.appendChild(kbd1);
+  hint1.appendChild(document.createTextNode("  command palette"));
+  shortcuts.appendChild(hint1);
+
+  const hint2 = document.createElement("div");
+  hint2.className = "welcome-shortcut";
+  const kbd2 = document.createElement("kbd");
+  kbd2.textContent = "Ctrl+Shift+N";
+  hint2.appendChild(kbd2);
+  hint2.appendChild(document.createTextNode("  new tab"));
+  shortcuts.appendChild(hint2);
+
+  content.appendChild(shortcuts);
   welcome.appendChild(content);
   terminalsEl.appendChild(welcome);
 }
