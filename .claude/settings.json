@@ -18,6 +18,11 @@
             "type": "command",
             "command": "C:\\Python314\\python.exe \".claude/hooks/live_proving_reminder.py\"",
             "timeout": 5
+          },
+          {
+            "type": "prompt",
+            "prompt": "A task was just completed. Check: was this an implementation task (code was written/edited)? If YES, and if testing/live-proving has NOT yet been done for this task, remind via systemMessage to run /simplify on the changed code before moving to tests or live-proving. The /simplify skill reviews changed code for reuse, quality, and efficiency. If the task was not implementation (e.g. research, planning, config) or tests have already run, no reminder needed. Return JSON: {\"systemMessage\": \"...\"} with the reminder, or {} if not needed.",
+            "timeout": 15
           }
         ]
       }
@@ -84,6 +89,16 @@
             "type": "command",
             "command": "C:\\Python314\\python.exe \".claude/hooks/gitignore_check.py\"",
             "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "An Agent subagent just completed. Check: were multiple agents launched in parallel to work on different files or features? If YES, remind the user (via systemMessage) that since agents developed in silo, they should audit the combined changes end-to-end for gaps or conflicts — stale references, mismatched interfaces, duplicate handlers, naming mismatches between frontend/backend, or captured closures with wrong values. If only one agent was used or the agents worked on completely independent concerns with no shared interfaces, no reminder is needed. Return JSON: {\"systemMessage\": \"...\"} with the reminder, or {} if not needed.",
+            "timeout": 15
           }
         ]
       }

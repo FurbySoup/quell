@@ -1,7 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::collections::HashMap;
 use std::sync::Mutex;
 use std::thread;
+use std::time::Duration;
 
 use base64::Engine;
 use crossbeam_channel::{Receiver, Sender};
@@ -20,22 +22,41 @@ use quell::config::{AppConfig, ToolKind};
 use quell::conpty::ConPtySession;
 use quell::proxy::output_sink::ChannelSink;
 use quell::proxy::Proxy;
+use quell::proxy::render_coalescer::RenderCoalescer;
 
-/// Shared state: channels for sending input/resize to the proxy's external I/O.
-struct ProxyState {
+/// Per-session state: channels for sending input/resize to the proxy's external I/O.
+struct SessionState {
     input_tx: Sender<Vec<u8>>,
     resize_tx: Sender<(i16, i16)>,
 }
 
-/// Tauri-managed state wrapping the proxy channels.
-/// None until spawn_shell is called.
+/// Tauri-managed state wrapping all sessions.
 struct AppState {
-    proxy: Mutex<Option<ProxyState>>,
+    sessions: Mutex<HashMap<String, SessionState>>,
+    next_id: Mutex<u32>,
+}
+
+impl AppState {
+    fn new() -> Self {
+        Self {
+            sessions: Mutex::new(HashMap::new()),
+            next_id: Mutex::new(1),
+        }
+    }
+
+    fn next_session_id(&self) -> String {
+        let mut id = self.next_id.lock().unwrap_or_else(|e| e.into_inner());
+        let session_id = format!("session-{id}");
+        *id += 1;
+        session_id
+    }
 }
 
 /// Event payload sent to the frontend with terminal output.
 #[derive(Clone, Serialize)]
 struct TerminalOutput {
+    /// Session this output belongs to
+    session_id: String,
     /// Base64-encoded terminal output bytes
     data: String,
 }
@@ -43,11 +64,12 @@ struct TerminalOutput {
 /// Event payload sent when the child process exits.
 #[derive(Clone, Serialize)]
 struct ChildExited {
+    session_id: String,
     exit_code: u32,
 }
 
 /// Spawn a shell process and wire it through the quell proxy.
-/// The command defaults to "cmd.exe" if not provided.
+/// Returns the session_id for the new session.
 #[tauri::command]
 fn spawn_shell(
     app: tauri::AppHandle,
@@ -55,18 +77,16 @@ fn spawn_shell(
     command: Option<String>,
     cols: Option<i16>,
     rows: Option<i16>,
-) -> Result<(), String> {
-    let mut proxy_guard = state.proxy.lock().map_err(|e| e.to_string())?;
-    if proxy_guard.is_some() {
-        return Err("shell already spawned".into());
-    }
+    session_id: Option<String>,
+) -> Result<String, String> {
+    let session_id = session_id.unwrap_or_else(|| state.next_session_id());
 
     let command = command.unwrap_or_else(|| "cmd.exe".into());
     let cols = cols.unwrap_or(120);
     let rows = rows.unwrap_or(30);
 
     let tool = ToolKind::detect(&command);
-    info!(command = %command, cols, rows, tool = %tool, "spawning shell for GUI");
+    info!(session_id = %session_id, command = %command, cols, rows, tool = %tool, "spawning shell for GUI");
 
     let session = ConPtySession::spawn(&command, cols, rows)
         .map_err(|e| format!("failed to spawn: {e}"))?;
@@ -85,39 +105,112 @@ fn spawn_shell(
     let (proxy, event_rx) = Proxy::new(config, tool, session, Box::new(sink));
     let proxy = proxy.with_external_io(input_rx, resize_rx);
 
-    // Store channels so commands can send input/resize
-    *proxy_guard = Some(ProxyState {
-        input_tx,
-        resize_tx,
-    });
-    drop(proxy_guard);
+    // Store session state
+    {
+        let mut sessions = state.sessions.lock().map_err(|e| e.to_string())?;
+        sessions.insert(session_id.clone(), SessionState {
+            input_tx,
+            resize_tx,
+        });
+    }
 
-    // Output forwarder thread: reads from ChannelSink, emits Tauri events
+    // Output forwarder thread: raw passthrough with RenderCoalescer for batching.
+    // Raw VT bytes flow directly to xterm.js, preserving scrollback.
+    //
+    // Resize-during-streaming may cause visual artifacts from ConPTY's
+    // cursor-positioned redraw — this is a known ConPTY limitation
+    // (microsoft/terminal#14774), same as the Phase 1 CLI.
     let app_handle = app.clone();
+    let sid = session_id.clone();
     thread::Builder::new()
-        .name("output-forwarder".into())
+        .name(format!("output-forwarder-{sid}"))
         .spawn(move || {
             let b64 = base64::engine::general_purpose::STANDARD;
-            while let Ok(data) = output_rx.recv() {
-                let encoded = b64.encode(&data);
-                if let Err(e) = app_handle.emit("terminal-output", TerminalOutput { data: encoded }) {
-                    warn!(error = %e, "failed to emit terminal-output event");
-                    break;
+            let mut coalescer = RenderCoalescer::new(
+                Duration::from_millis(5),   // render_delay: batch rapid output
+                Duration::from_millis(50),  // sync_delay: wait after sync blocks
+                Duration::from_millis(16),  // min_frame_time: ~60fps cap
+            );
+            let mut pending_output: Vec<u8> = Vec::new();
+
+            let sid_ref = &sid;
+            let emit = |data: &[u8]| -> bool {
+                let encoded = b64.encode(data);
+                if let Err(e) = app_handle.emit(
+                    "terminal-output",
+                    TerminalOutput {
+                        session_id: sid_ref.clone(),
+                        data: encoded,
+                    },
+                ) {
+                    warn!(error = %e, session_id = %sid_ref, "failed to emit terminal-output event");
+                    return false;
+                }
+                true
+            };
+
+            loop {
+                let timeout = coalescer.time_until_render()
+                    .unwrap_or(Duration::from_secs(60));
+
+                crossbeam_channel::select! {
+                    recv(output_rx) -> msg => {
+                        match msg {
+                            Ok(data) => {
+                                pending_output.extend_from_slice(&data);
+                                coalescer.notify_data();
+                                // Drain any additional buffered chunks
+                                while let Ok(more) = output_rx.try_recv() {
+                                    pending_output.extend_from_slice(&more);
+                                }
+                            }
+                            Err(_) => {
+                                // Channel closed — flush and exit
+                                if !pending_output.is_empty() {
+                                    emit(&pending_output);
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    default(timeout) => {
+                        // Timer fired
+                    }
+                }
+
+                // Emit when coalescer says it's time
+                if coalescer.should_render() && !pending_output.is_empty() {
+                    if !emit(&pending_output) {
+                        break;
+                    }
+                    pending_output.clear();
+                    coalescer.mark_rendered();
                 }
             }
-            info!("output forwarder exiting");
+            info!(session_id = %sid, "output forwarder exiting");
         })
         .ok();
 
-    // Proxy event forwarder: watches for ChildExited
+    // Proxy event forwarder: watches for ChildExited, clears session state for re-spawn
     let app_handle2 = app.clone();
+    let sid = session_id.clone();
     thread::Builder::new()
-        .name("event-forwarder".into())
+        .name(format!("event-forwarder-{sid}"))
         .spawn(move || {
             while let Ok(event) = event_rx.recv() {
                 if let quell::proxy::events::ProxyEvent::ChildExited { exit_code } = event {
-                    info!(exit_code, "child exited, emitting event");
-                    let _ = app_handle2.emit("child-exited", ChildExited { exit_code });
+                    info!(exit_code, session_id = %sid, "child exited, emitting event");
+                    // Clear this session's state so it can be re-spawned
+                    if let Some(state) = app_handle2.try_state::<AppState>() {
+                        let mut sessions = state.sessions.lock()
+                            .unwrap_or_else(|e| e.into_inner());
+                        sessions.remove(&sid);
+                        info!(session_id = %sid, "session state cleared for re-spawn");
+                    }
+                    let _ = app_handle2.emit("child-exited", ChildExited {
+                        session_id: sid.clone(),
+                        exit_code,
+                    });
                     break;
                 }
             }
@@ -129,19 +222,20 @@ fn spawn_shell(
     // the proxy is constructed here and moved exclusively to this thread.
     // No other thread accesses the session handles.
     let send_proxy = SendProxy(proxy);
+    let sid = session_id.clone();
     thread::Builder::new()
-        .name("proxy-runner".into())
+        .name(format!("proxy-runner-{sid}"))
         .spawn(move || {
             let proxy = send_proxy;
             match proxy.0.run() {
-                Ok(code) => info!(exit_code = code, "proxy finished"),
-                Err(e) => error!(error = %e, "proxy error"),
+                Ok(code) => info!(exit_code = code, session_id = %sid, "proxy finished"),
+                Err(e) => error!(error = %e, session_id = %sid, "proxy error"),
             }
         })
         .ok();
 
-    info!("shell spawned successfully");
-    Ok(())
+    info!(session_id = %session_id, "shell spawned successfully");
+    Ok(session_id)
 }
 
 /// Write input data to the shell (from xterm.js onData).
@@ -149,13 +243,14 @@ fn spawn_shell(
 #[tauri::command]
 fn write_input(
     state: tauri::State<'_, AppState>,
+    session_id: String,
     data: String,
 ) -> Result<(), String> {
     use base64::engine::general_purpose::STANDARD;
     let decoded = STANDARD.decode(&data).map_err(|e| format!("base64 decode failed: {e}"))?;
-    let proxy_guard = state.proxy.lock().map_err(|e| e.to_string())?;
-    let proxy_state = proxy_guard.as_ref().ok_or("no shell running")?;
-    proxy_state
+    let sessions = state.sessions.lock().map_err(|e| e.to_string())?;
+    let session = sessions.get(&session_id).ok_or("no such session")?;
+    session
         .input_tx
         .send(decoded)
         .map_err(|_| "input channel closed".to_string())
@@ -165,15 +260,31 @@ fn write_input(
 #[tauri::command]
 fn resize_pty(
     state: tauri::State<'_, AppState>,
+    session_id: String,
     cols: i16,
     rows: i16,
 ) -> Result<(), String> {
-    let proxy_guard = state.proxy.lock().map_err(|e| e.to_string())?;
-    let proxy_state = proxy_guard.as_ref().ok_or("no shell running")?;
-    proxy_state
+    let sessions = state.sessions.lock().map_err(|e| e.to_string())?;
+    let session = sessions.get(&session_id).ok_or("no such session")?;
+    session
         .resize_tx
         .try_send((cols, rows))
         .map_err(|e| format!("resize channel error: {e}"))
+}
+
+/// Close a session by dropping its channels.
+#[tauri::command]
+fn close_session(
+    state: tauri::State<'_, AppState>,
+    session_id: String,
+) -> Result<(), String> {
+    let mut sessions = state.sessions.lock().map_err(|e| e.to_string())?;
+    if sessions.remove(&session_id).is_some() {
+        info!(session_id = %session_id, "session closed by user");
+        Ok(())
+    } else {
+        Err("no such session".into())
+    }
 }
 
 /// Detect Windows dark/light mode from the registry.
@@ -189,9 +300,6 @@ fn get_system_theme() -> String {
     let mut size = std::mem::size_of::<u32>() as u32;
     let mut kind = REG_DWORD;
 
-    // Prefer SystemUsesLightTheme (matches taskbar/system chrome) over
-    // AppsUseLightTheme — terminal apps feel more like system UI than apps.
-    // Falls back to AppsUseLightTheme, then defaults to dark.
     for value_name in [w!("SystemUsesLightTheme"), w!("AppsUseLightTheme")] {
         let result = unsafe {
             RegGetValueW(
@@ -234,26 +342,23 @@ fn main() {
     info!(version = env!("CARGO_PKG_VERSION"), "quell GUI starting");
 
     tauri::Builder::default()
-        .manage(AppState {
-            proxy: Mutex::new(None),
-        })
+        .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![
             spawn_shell,
             write_input,
             resize_pty,
+            close_session,
             get_system_theme,
             get_default_command,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 info!("window close requested, cleaning up");
-                // Drop the proxy channels to signal shutdown.
-                // The input_tx drop causes the proxy's input loop to end,
-                // which triggers ConPTY session cleanup and child termination.
                 if let Some(state) = window.try_state::<AppState>() {
-                    let mut guard = state.proxy.lock().unwrap_or_else(|e: std::sync::PoisonError<_>| e.into_inner());
-                    let _ = guard.take();
-                    info!("proxy state cleared");
+                    let mut sessions = state.sessions.lock()
+                        .unwrap_or_else(|e: std::sync::PoisonError<_>| e.into_inner());
+                    sessions.clear();
+                    info!("all sessions cleared");
                 }
             }
         })

@@ -1,4 +1,3 @@
-#![allow(dead_code)] // Phase 2 extension point — render coalescing deferred to Tauri GUI
 use std::time::{Duration, Instant};
 use tracing::{debug, trace};
 

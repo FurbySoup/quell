@@ -1,4 +1,4 @@
-#![allow(dead_code)] // Phase 2 extension point — diff rendering deferred to Tauri GUI
+#![allow(dead_code)] // Available for future use — GUI currently uses raw passthrough
 use tracing::{debug, trace};
 
 /// Differential renderer using vt100 terminal emulator.

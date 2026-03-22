@@ -3,8 +3,6 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 
-let fitAddonInstance: FitAddon | null = null;
-
 export type ThemeMode = "dark" | "light";
 
 const darkTheme: ITheme = {
@@ -57,17 +55,39 @@ export function getTheme(mode: ThemeMode): ITheme {
   return mode === "light" ? lightTheme : darkTheme;
 }
 
-export interface TerminalSize {
-  cols: number;
-  rows: number;
+export interface TerminalInstance {
+  terminal: Terminal;
+  fitAddon: FitAddon;
+  container: HTMLDivElement;
+  sessionId: string;
 }
 
-export function initTerminal(
-  container: HTMLElement,
-  onResize?: (size: TerminalSize) => void,
+/// Callback for paste events — set by ipc.ts with the correct session ID
+type PasteCallback = (text: string) => void;
+const pasteCallbacks = new Map<Terminal, PasteCallback>();
+
+export function setPasteCallback(
+  terminal: Terminal,
+  callback: PasteCallback,
+): void {
+  pasteCallbacks.set(terminal, callback);
+}
+
+export function clearPasteCallback(terminal: Terminal): void {
+  pasteCallbacks.delete(terminal);
+}
+
+export function createTerminal(
+  parent: HTMLElement,
+  sessionId: string,
   themeMode?: ThemeMode,
-): Terminal {
+): TerminalInstance {
   const theme = getTheme(themeMode ?? "dark");
+
+  const container = document.createElement("div");
+  container.className = "terminal-container";
+  container.dataset.sessionId = sessionId;
+  parent.appendChild(container);
 
   const terminal = new Terminal({
     fontFamily: "Cascadia Code, Consolas, monospace",
@@ -78,8 +98,36 @@ export function initTerminal(
 
   terminal.open(container);
 
+  // Copy/paste keyboard shortcuts
+  terminal.attachCustomKeyEventHandler((event: KeyboardEvent): boolean => {
+    if (event.type !== "keydown") {
+      return true;
+    }
+
+    // Ctrl+C with selection -> copy to clipboard
+    if (event.ctrlKey && event.key === "c" && terminal.hasSelection()) {
+      navigator.clipboard.writeText(terminal.getSelection());
+      return false;
+    }
+
+    // Ctrl+V -> paste from clipboard via registered callback
+    if (event.ctrlKey && event.key === "v") {
+      // preventDefault stops the browser's native paste event from also
+      // firing on xterm's textarea, which would cause double paste
+      event.preventDefault();
+      const cb = pasteCallbacks.get(terminal);
+      if (cb) {
+        navigator.clipboard.readText().then((text) => {
+          if (text) cb(text);
+        });
+      }
+      return false;
+    }
+
+    return true;
+  });
+
   const fitAddon = new FitAddon();
-  fitAddonInstance = fitAddon;
   terminal.loadAddon(fitAddon);
   fitAddon.fit();
 
@@ -90,20 +138,15 @@ export function initTerminal(
     console.warn("WebGL addon failed to load, falling back to canvas renderer:", e);
   }
 
-  let resizeTimeout: ReturnType<typeof setTimeout> | null = null;
-  window.addEventListener("resize", () => {
-    if (resizeTimeout) clearTimeout(resizeTimeout);
-    resizeTimeout = setTimeout(() => {
-      fitAddon.fit();
-      if (onResize) {
-        onResize({ cols: terminal.cols, rows: terminal.rows });
-      }
-    }, 100);
-  });
-
-  return terminal;
+  return { terminal, fitAddon, container, sessionId };
 }
 
-export function getFitAddon(): FitAddon | null {
-  return fitAddonInstance;
+export function activateTerminal(instance: TerminalInstance): void {
+  instance.container.classList.add("active");
+  instance.fitAddon.fit();
+  instance.terminal.focus();
+}
+
+export function deactivateTerminal(instance: TerminalInstance): void {
+  instance.container.classList.remove("active");
 }
