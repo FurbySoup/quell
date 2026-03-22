@@ -84,6 +84,15 @@ cargo clippy --lib --features recording  # With recording — no warnings
 - **Module structure:** Each module has `mod.rs` with public API, internal files for implementation
 - **Comments:** Only where the logic isn't self-evident. No boilerplate doc comments on obvious functions.
 
+## UI/UX Conventions (Phase 2+)
+
+- **Use the `/frontend-design` skill** when building or modifying GUI components to avoid generic "AI slop" aesthetics
+- **Vanilla CSS with custom properties** for theming — no CSS frameworks. Single `theme.css` as source of truth.
+- **Coordinate xterm.js theme object with CSS custom properties** — canvas-rendered terminal colors are independent of CSS, so the chrome and terminal palettes must be kept in sync manually
+- **Dark theme defaults:** no pure black — use dark greys (`#1e1e1e` or tinted darks like `#0d1117`), desaturate bright colors, maintain WCAG 4.5:1 contrast minimum for body text
+- **Font stack:** Cascadia Code, JetBrains Mono, Fira Code for terminal text; `system-ui` for window chrome
+- **Aesthetic direction:** Industrial/utilitarian — sharp corners (2px max), panel splits over card layouts, subtle opacity transitions only
+
 ## Feature Workflow
 
 1. Create/update tasks for the feature
@@ -177,4 +186,10 @@ The `windows` crate (0.59) wraps Win32 APIs differently from the `winapi` crate.
 
 - **Phase 1:** CLI proxy (shipped, public) — runs in any Windows terminal, eliminates scroll-jumping. Permanent product for power users.
 - **Phase 2:** Standalone Tauri + xterm.js terminal (LOCAL ONLY — not pushed to GitHub until stable release). `commit_discipline.py` hook enforces this.
-- **Phase 3:** Session persistence, search, split panes, community release, auto-update
+  - M2.1 Shell ✓, M2.2 Copy/Paste + Coalescer ✓, M2.3 Tabs + Restart ✓
+  - M2.4 Architecture hardening (Channels IPC, keyboard shortcuts, zoom, addons, preferences)
+- **Phase 3:** Public release — search, themes, command palette, then blocks, split panes, session persistence, community release.
+  - 3.0 Search + Theme + Command Palette = **first public release gate**
+  - 3.1 Block-based output + session persistence
+  - 3.2 Split panes + polish
+  - 3.3 Community release (auto-update, installer, push guard removal)
