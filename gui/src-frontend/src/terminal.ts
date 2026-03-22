@@ -2,65 +2,15 @@ import { Terminal, ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { SearchAddon } from "@xterm/addon-search";
 import { open } from "@tauri-apps/plugin-shell";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import "@xterm/xterm/css/xterm.css";
 
-export type ThemeMode = "dark" | "light";
-
-const darkTheme: ITheme = {
-  background: "#1e1e1e",
-  foreground: "#d4d4d4",
-  cursor: "#d4d4d4",
-  selectionBackground: "#264f78",
-  black: "#000000",
-  red: "#cd3131",
-  green: "#0dbc79",
-  yellow: "#e5e510",
-  blue: "#2472c8",
-  magenta: "#bc3fbc",
-  cyan: "#11a8cd",
-  white: "#e5e5e5",
-  brightBlack: "#666666",
-  brightRed: "#f14c4c",
-  brightGreen: "#23d18b",
-  brightYellow: "#f5f543",
-  brightBlue: "#3b8eea",
-  brightMagenta: "#d670d6",
-  brightCyan: "#29b8db",
-  brightWhite: "#e5e5e5",
-};
-
-const lightTheme: ITheme = {
-  background: "#ffffff",
-  foreground: "#383a42",
-  cursor: "#383a42",
-  selectionBackground: "#add6ff",
-  black: "#000000",
-  red: "#cd3131",
-  green: "#008000",
-  yellow: "#795e25",
-  blue: "#0451a5",
-  magenta: "#bc05bc",
-  cyan: "#0598bc",
-  white: "#a0a0a0",
-  brightBlack: "#666666",
-  brightRed: "#cd3131",
-  brightGreen: "#14ce14",
-  brightYellow: "#b5ba00",
-  brightBlue: "#0451a5",
-  brightMagenta: "#bc05bc",
-  brightCyan: "#0598bc",
-  brightWhite: "#e5e5e5",
-};
-
-export function getTheme(mode: ThemeMode): ITheme {
-  return mode === "light" ? lightTheme : darkTheme;
-}
-
 export interface TerminalInstance {
   terminal: Terminal;
   fitAddon: FitAddon;
+  searchAddon: SearchAddon;
   container: HTMLDivElement;
   sessionId: string;
 }
@@ -75,6 +25,10 @@ export interface ShortcutCallbacks {
   zoomIn: () => void;
   zoomOut: () => void;
   zoomReset: () => void;
+  toggleSearch: () => void;
+  togglePalette: () => void;
+  findNext: () => void;
+  findPrevious: () => void;
 }
 
 let shortcuts: ShortcutCallbacks | null = null;
@@ -104,12 +58,10 @@ export function clearPasteCallback(terminal: Terminal): void {
 export function createTerminal(
   parent: HTMLElement,
   sessionId: string,
-  themeMode?: ThemeMode,
+  theme: ITheme,
   fontSize?: number,
   scrollback?: number,
 ): TerminalInstance {
-  const theme = getTheme(themeMode ?? "dark");
-
   const container = document.createElement("div");
   container.className = "terminal-container";
   container.dataset.sessionId = sessionId;
@@ -160,13 +112,26 @@ export function createTerminal(
       return false;
     }
 
-    // Ctrl+Shift+C / Ctrl+Shift+V -> alternative copy/paste
-    if (event.ctrlKey && event.shiftKey && event.key === "C") {
-      copySelection();
-      return false;
+    // Ctrl+Shift shortcuts
+    // F/P/N are handled by the global document keydown handler to prevent
+    // browser defaults. We return false here to stop xterm from processing them.
+    if (event.ctrlKey && event.shiftKey) {
+      switch (event.key) {
+        case "C":
+          copySelection();
+          return false;
+        case "V":
+          pasteFromClipboard(event);
+          return false;
+        case "F":
+        case "P":
+        case "N":
+          return false;
+      }
     }
-    if (event.ctrlKey && event.shiftKey && event.key === "V") {
-      pasteFromClipboard(event);
+
+    // F3 / Shift+F3 — action handled by global handler, block from terminal
+    if (event.key === "F3") {
       return false;
     }
 
@@ -189,12 +154,6 @@ export function createTerminal(
           shortcuts.switchToTab(num - 1);
           return false;
         }
-      }
-
-      // Ctrl+Shift+N -> new tab
-      if (event.ctrlKey && event.shiftKey && event.key === "N") {
-        shortcuts.newTab();
-        return false;
       }
 
       // Ctrl+= / Ctrl+- / Ctrl+0 -> zoom
@@ -220,7 +179,7 @@ export function createTerminal(
     return true;
   });
 
-  // Addon loading order: WebGL (rendering) -> Unicode11 (text) -> WebLinks (UX) -> Fit (layout)
+  // Addon loading order: WebGL (rendering) -> Unicode11 (text) -> WebLinks (UX) -> Search -> Fit (layout)
   try {
     const webglAddon = new WebglAddon();
     webglAddon.onContextLoss(() => {
@@ -245,11 +204,14 @@ export function createTerminal(
     }),
   );
 
+  const searchAddon = new SearchAddon();
+  terminal.loadAddon(searchAddon);
+
   const fitAddon = new FitAddon();
   terminal.loadAddon(fitAddon);
   fitAddon.fit();
 
-  return { terminal, fitAddon, container, sessionId };
+  return { terminal, fitAddon, searchAddon, container, sessionId };
 }
 
 export function activateTerminal(instance: TerminalInstance): void {

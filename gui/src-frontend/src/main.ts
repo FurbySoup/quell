@@ -3,9 +3,7 @@ import {
   createTerminal,
   activateTerminal,
   deactivateTerminal,
-  getTheme,
   registerShortcuts,
-  ThemeMode,
   TerminalInstance,
 } from "./terminal";
 import {
@@ -19,19 +17,37 @@ import {
   loadPreferences,
   savePreference,
   DEFAULTS,
-  Preferences,
 } from "./preferences";
+import {
+  getAllThemes,
+  getThemeByName,
+  applyQuellTheme,
+  toXtermTheme,
+  QuellTheme,
+} from "./themes";
+import {
+  initSearchUI,
+  setActiveSearchAddon,
+  toggleSearch,
+  findNext,
+  findPrevious,
+} from "./search";
+import {
+  initPaletteUI,
+  registerActions,
+  togglePalette,
+} from "./palette";
 
 interface Session {
   id: string;
   instance: TerminalInstance;
   tabEl: HTMLDivElement;
-  customName: boolean; // true if user renamed this tab
+  customName: boolean;
 }
 
 let sessions: Session[] = [];
 let activeSessionId: string | null = null;
-let themeMode: ThemeMode = "dark";
+let currentTheme: QuellTheme = getThemeByName(DEFAULTS.themePref);
 let defaultCommand: string | undefined;
 
 // Zoom state
@@ -39,7 +55,7 @@ const MIN_FONT_SIZE = 8;
 const MAX_FONT_SIZE = 32;
 const FONT_STEP = 2;
 let currentFontSize = DEFAULTS.fontSize;
-let currentThemePref: Preferences["themePref"] = DEFAULTS.themePref;
+let currentThemePref: string = DEFAULTS.themePref;
 
 function getTabsEl(): HTMLElement {
   return document.getElementById("tabs")!;
@@ -64,7 +80,6 @@ function createTabElement(sessionId: string, index: number): HTMLDivElement {
     }
   });
 
-  // Double-click label to rename
   const label = tab.querySelector(".label")!;
   label.addEventListener("dblclick", (e) => {
     e.stopPropagation();
@@ -103,19 +118,18 @@ function createTabElement(sessionId: string, index: number): HTMLDivElement {
 function switchToSession(sessionId: string): void {
   if (activeSessionId === sessionId) return;
 
-  // Deactivate current
   const current = sessions.find((s) => s.id === activeSessionId);
   if (current) {
     deactivateTerminal(current.instance);
     current.tabEl.classList.remove("active");
   }
 
-  // Activate target
   const target = sessions.find((s) => s.id === sessionId);
   if (target) {
     activateTerminal(target.instance);
     target.tabEl.classList.add("active");
     activeSessionId = sessionId;
+    setActiveSearchAddon(target.instance.searchAddon);
   }
 }
 
@@ -123,16 +137,15 @@ async function addSession(): Promise<void> {
   const terminalsEl = getTerminalsEl();
   const tabsEl = getTabsEl();
 
-  // Create terminal instance
   const tempId = `pending-${Date.now()}`;
+  const xtermTheme = toXtermTheme(currentTheme);
   const instance = createTerminal(
     terminalsEl,
     tempId,
-    themeMode,
+    xtermTheme,
     currentFontSize,
   );
 
-  // Spawn backend session — Channel for output is created inside spawnSession
   const sessionId = await spawnSession(
     instance.terminal,
     defaultCommand,
@@ -140,11 +153,9 @@ async function addSession(): Promise<void> {
     instance.terminal.rows,
   );
 
-  // Update the instance's session ID
   instance.sessionId = sessionId;
   instance.container.dataset.sessionId = sessionId;
 
-  // Create tab
   const tabEl = createTabElement(sessionId, sessions.length + 1);
   tabsEl.appendChild(tabEl);
 
@@ -156,10 +167,8 @@ async function addSession(): Promise<void> {
   };
   sessions.push(session);
 
-  // Wire IPC
   connectSession(sessionId, instance.terminal, defaultCommand);
 
-  // Switch to this tab and update tab bar visibility
   switchToSession(sessionId);
   updateTabBarVisibility();
 }
@@ -170,25 +179,20 @@ async function removeSession(sessionId: string): Promise<void> {
 
   const session = sessions[idx];
 
-  // Disconnect IPC handlers
   disconnectSession(sessionId, session.instance.terminal);
 
-  // Close backend session (ignore errors if already exited)
   try {
     await closeSession(sessionId);
   } catch {
     // Session may have already exited
   }
 
-  // Remove DOM elements
   session.tabEl.remove();
   session.instance.terminal.dispose();
   session.instance.container.remove();
 
-  // Remove from list
   sessions.splice(idx, 1);
 
-  // If we closed the active tab, switch to another
   if (activeSessionId === sessionId) {
     activeSessionId = null;
     if (sessions.length > 0) {
@@ -197,7 +201,6 @@ async function removeSession(sessionId: string): Promise<void> {
     }
   }
 
-  // Renumber only auto-named tabs
   sessions.forEach((s, i) => {
     if (!s.customName) {
       const label = s.tabEl.querySelector(".label");
@@ -215,7 +218,6 @@ function updateTabBarVisibility(): void {
   } else {
     tabBar.classList.remove("single-tab");
   }
-  // Re-fit the active terminal since tab bar height changed
   const active = sessions.find((s) => s.id === activeSessionId);
   if (active) {
     active.instance.fitAddon.fit();
@@ -229,37 +231,33 @@ function setFontSize(size: number): void {
   for (const s of sessions) {
     s.instance.terminal.options.fontSize = currentFontSize;
   }
-  // Only fit the active session — inactive ones will fit on activation
   const active = sessions.find((s) => s.id === activeSessionId);
   if (active) {
     active.instance.fitAddon.fit();
   }
+  // Scale chrome UI proportionally with terminal font size
+  const scale = currentFontSize / DEFAULTS.fontSize;
+  document.documentElement.style.setProperty("--q-ui-scale", String(scale));
   savePreference("fontSize", currentFontSize);
 }
 
 // --- Theme ---
 
-function applyTheme(mode: ThemeMode): void {
-  themeMode = mode;
-  const theme = getTheme(mode);
-  document.body.style.background = theme.background ?? "#1e1e1e";
-  if (mode === "light") {
-    document.body.classList.add("light");
-    document.body.classList.remove("dark");
-  } else {
-    document.body.classList.add("dark");
-    document.body.classList.remove("light");
-  }
+function applyTheme(themeName: string): void {
+  currentTheme = getThemeByName(themeName);
+  currentThemePref = themeName;
+  applyQuellTheme(currentTheme);
+  const xtermTheme = toXtermTheme(currentTheme);
   for (const s of sessions) {
-    s.instance.terminal.options.theme = theme;
+    s.instance.terminal.options.theme = xtermTheme;
   }
 }
 
-function resolveTheme(pref: Preferences["themePref"]): ThemeMode {
+function resolveThemeName(pref: string): string {
   if (pref === "system") {
     return window.matchMedia("(prefers-color-scheme: dark)").matches
-      ? "dark"
-      : "light";
+      ? "quell-dark"
+      : "quell-light";
   }
   return pref;
 }
@@ -286,24 +284,151 @@ function switchToTabIndex(index: number): void {
   }
 }
 
+function removeActiveSession(): void {
+  if (activeSessionId) {
+    removeSession(activeSessionId);
+  }
+}
+
 // --- Initialization ---
 
 document.addEventListener("DOMContentLoaded", async () => {
-  // Load persisted preferences
   const prefs = await loadPreferences();
   currentFontSize = prefs.fontSize;
   currentThemePref = prefs.themePref;
-  themeMode = resolveTheme(currentThemePref);
 
-  // Load default command from Rust backend
+  // Set UI scale from persisted font size
+  const scale = currentFontSize / DEFAULTS.fontSize;
+  document.documentElement.style.setProperty("--q-ui-scale", String(scale));
+
+  const themeName = resolveThemeName(currentThemePref);
+  applyTheme(themeName);
+
   try {
     defaultCommand = await invoke<string>("get_default_command");
   } catch (e) {
     console.warn("get_default_command failed:", e);
   }
 
-  // Apply theme to page
-  applyTheme(themeMode);
+  // Initialize overlay UIs
+  initSearchUI();
+  initPaletteUI();
+
+  // Global key handler — intercepts browser/WebView2 defaults before they fire.
+  // Must preventDefault here because xterm's attachCustomKeyEventHandler
+  // only works when the terminal textarea is focused.
+  document.addEventListener("keydown", (e) => {
+    // Ctrl+Shift combos that conflict with browser defaults
+    if (e.ctrlKey && e.shiftKey) {
+      switch (e.key) {
+        case "P": // browser print
+          e.preventDefault();
+          togglePalette();
+          return;
+        case "F": // browser find
+          e.preventDefault();
+          toggleSearch();
+          return;
+        case "N": // browser incognito
+          e.preventDefault();
+          addSession();
+          return;
+        case "C": // browser devtools inspector
+          e.preventDefault();
+          return;
+        case "V": // browser paste-without-formatting
+          e.preventDefault();
+          return;
+      }
+    }
+
+    // Ctrl+=/Ctrl+-/Ctrl+0 — prevent browser zoom, let xterm handler manage
+    if (e.ctrlKey && !e.shiftKey && !e.altKey) {
+      if (e.key === "=" || e.key === "+" || e.key === "-" || e.key === "0") {
+        e.preventDefault();
+      }
+    }
+
+    // F3/Shift+F3 — prevent browser find, handle search navigation
+    if (e.key === "F3") {
+      e.preventDefault();
+      if (e.shiftKey) {
+        findPrevious();
+      } else {
+        findNext();
+      }
+    }
+  });
+
+  // Register palette actions
+  const themeActions = getAllThemes().map((t) => ({
+    id: `theme-${t.name}`,
+    label: t.displayName,
+    category: "Theme",
+    execute: () => {
+      applyTheme(t.name);
+      savePreference("themePref", t.name);
+    },
+  }));
+
+  registerActions([
+    {
+      id: "new-tab",
+      label: "New Tab",
+      shortcut: "Ctrl+Shift+N",
+      category: "Tabs",
+      execute: () => addSession(),
+    },
+    {
+      id: "close-tab",
+      label: "Close Tab",
+      category: "Tabs",
+      execute: removeActiveSession,
+    },
+    {
+      id: "next-tab",
+      label: "Next Tab",
+      shortcut: "Ctrl+Tab",
+      category: "Tabs",
+      execute: nextTab,
+    },
+    {
+      id: "prev-tab",
+      label: "Previous Tab",
+      shortcut: "Ctrl+Shift+Tab",
+      category: "Tabs",
+      execute: prevTab,
+    },
+    {
+      id: "zoom-in",
+      label: "Zoom In",
+      shortcut: "Ctrl+=",
+      category: "View",
+      execute: () => setFontSize(currentFontSize + FONT_STEP),
+    },
+    {
+      id: "zoom-out",
+      label: "Zoom Out",
+      shortcut: "Ctrl+-",
+      category: "View",
+      execute: () => setFontSize(currentFontSize - FONT_STEP),
+    },
+    {
+      id: "zoom-reset",
+      label: "Reset Zoom",
+      shortcut: "Ctrl+0",
+      category: "View",
+      execute: () => setFontSize(DEFAULTS.fontSize),
+    },
+    {
+      id: "toggle-search",
+      label: "Find in Terminal",
+      shortcut: "Ctrl+Shift+F",
+      category: "Search",
+      execute: toggleSearch,
+    },
+    ...themeActions,
+  ]);
 
   // Register keyboard shortcut callbacks
   registerShortcuts({
@@ -314,6 +439,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     zoomIn: () => setFontSize(currentFontSize + FONT_STEP),
     zoomOut: () => setFontSize(currentFontSize - FONT_STEP),
     zoomReset: () => setFontSize(DEFAULTS.fontSize),
+    toggleSearch,
+    togglePalette,
+    findNext,
+    findPrevious,
   });
 
   // Initialize global IPC listeners
@@ -327,8 +456,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     addSession();
   });
 
-  // ResizeObserver on terminal container — more reliable than window resize,
-  // fires on tab switch, split pane resize, and window resize.
+  // ResizeObserver
   let resizeTimeout: ReturnType<typeof setTimeout> | null = null;
   const resizeObserver = new ResizeObserver(() => {
     if (resizeTimeout) clearTimeout(resizeTimeout);
@@ -341,11 +469,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
   resizeObserver.observe(getTerminalsEl());
 
-  // Auto dark/light switching at runtime via matchMedia
+  // Auto dark/light switching at runtime
   const darkMediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
   darkMediaQuery.addEventListener("change", () => {
     if (currentThemePref === "system") {
-      applyTheme(resolveTheme("system"));
+      applyTheme(resolveThemeName("system"));
     }
   });
 });

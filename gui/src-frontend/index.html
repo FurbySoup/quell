@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Quell</title>
+  <link rel="stylesheet" href="/src/theme.css" />
   <link rel="stylesheet" href="/src/styles.css" />
 </head>
 <body>
@@ -11,7 +12,26 @@
     <div id="tabs"></div>
     <button id="tab-new" title="New tab">+</button>
   </div>
-  <div id="terminals"></div>
+  <div id="terminals">
+    <div id="search-overlay" hidden>
+      <div class="search-bar">
+        <input type="text" id="search-input" placeholder="Search..." spellcheck="false" />
+        <button id="search-regex" class="search-toggle" title="Regex">.*</button>
+        <button id="search-case" class="search-toggle" title="Case sensitive">Aa</button>
+        <button id="search-word" class="search-toggle" title="Whole word">ab</button>
+        <span class="search-count" id="search-count"></span>
+        <button id="search-prev" class="search-nav" title="Previous (Shift+F3)">&#x2191;</button>
+        <button id="search-next" class="search-nav" title="Next (F3)">&#x2193;</button>
+        <button id="search-close" class="search-close" title="Close (Esc)">&times;</button>
+      </div>
+    </div>
+  </div>
+  <div id="palette-overlay" hidden>
+    <div class="palette">
+      <input type="text" id="palette-input" placeholder="Type a command..." spellcheck="false" />
+      <div class="palette-results" id="palette-results"></div>
+    </div>
+  </div>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

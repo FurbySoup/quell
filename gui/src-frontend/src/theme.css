@@ -1,0 +1,22 @@
+/* Quell Theme — CSS Custom Property Defaults (quell-dark fallback)
+ * These are overridden at runtime by applyQuellTheme() in themes.ts.
+ * Declared here so the app renders correctly before JS initializes.
+ */
+:root {
+  --q-bg: #0d1117;
+  --q-bg-secondary: #161b22;
+  --q-border: #30363d;
+  --q-text: #c9d1d9;
+  --q-text-muted: #8b949e;
+  --q-accent: #d4843e;
+  --q-scrollbar-track: #0d1117;
+  --q-scrollbar-thumb: #30363d;
+  --q-scrollbar-thumb-hover: #484f58;
+  --q-overlay-bg: #161b22;
+  --q-overlay-border: #30363d;
+  --q-input-bg: #0d1117;
+  --q-input-border: #30363d;
+  --q-input-border-focus: #d4843e;
+  --q-highlight: rgba(212, 132, 62, 0.3);
+  --q-ui-scale: 1;
+}

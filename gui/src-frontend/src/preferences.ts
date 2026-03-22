@@ -2,12 +2,12 @@ import { Store } from "@tauri-apps/plugin-store";
 
 export interface Preferences {
   fontSize: number;
-  themePref: "system" | "dark" | "light";
+  themePref: string; // "system" or a theme name like "quell-dark"
 }
 
 export const DEFAULTS: Preferences = {
   fontSize: 14,
-  themePref: "dark",
+  themePref: "quell-dark",
 };
 
 let store: Store | null = null;
