@@ -295,6 +295,74 @@ mod proxy_pipeline_tests {
         assert!(coalescer.is_idle());
     }
 
+    /// Test that the coalescer reduces render count under rapid input.
+    #[test]
+    fn test_coalescer_reduces_render_count() {
+        use quell::proxy::render_coalescer::RenderCoalescer;
+
+        let mut coalescer = RenderCoalescer::new(
+            Duration::from_millis(5),
+            Duration::from_millis(50),
+            Duration::ZERO, // no fps cap for determinism
+        );
+
+        // Simulate 20 rapid data arrivals within the render delay
+        for _ in 0..20 {
+            coalescer.notify_data();
+        }
+
+        // Should not render yet (5ms deadline not passed)
+        assert!(!coalescer.should_render());
+
+        // Wait for deadline
+        std::thread::sleep(Duration::from_millis(10));
+        assert!(coalescer.should_render());
+        coalescer.mark_rendered();
+
+        // Only 1 render for 20 data notifications
+        assert!(coalescer.is_idle());
+    }
+
+    /// Test that a proxy session can be re-spawned after the first one exits.
+    /// Validates the session restart flow used by the GUI.
+    #[test]
+    fn test_proxy_respawn_after_exit() {
+        use quell::config::AppConfig;
+        use quell::conpty::ConPtySession;
+        use quell::proxy::Proxy;
+        use quell::proxy::events::ProxyEvent;
+
+        // First session
+        let config = AppConfig::default();
+        let session = ConPtySession::spawn("cmd.exe /c echo first", 80, 25)
+            .expect("failed to spawn first session");
+
+        let (sink, _buf) = quell::proxy::output_sink::BufferSink::new();
+        let (proxy, events) = Proxy::new(config, quell::config::ToolKind::Unknown, session, Box::new(sink));
+        let exit_code = proxy.run().expect("first proxy run failed");
+        assert!(exit_code == 0 || exit_code == 0xC000013A);
+
+        // Verify ChildExited event was emitted
+        let mut got_exit = false;
+        while let Ok(event) = events.try_recv() {
+            if matches!(event, ProxyEvent::ChildExited { .. }) {
+                got_exit = true;
+            }
+        }
+        assert!(got_exit, "expected ChildExited event from first session");
+
+        // Second session — simulates restart
+        let config2 = AppConfig::default();
+        let session2 = ConPtySession::spawn("cmd.exe /c echo second", 80, 25)
+            .expect("failed to spawn second session");
+
+        let (sink2, _buf2) = quell::proxy::output_sink::BufferSink::new();
+        let (proxy2, _events2) = Proxy::new(config2, quell::config::ToolKind::Unknown, session2, Box::new(sink2));
+        let exit_code2 = proxy2.run().expect("second proxy run failed");
+        // Second session spawned and ran successfully — validates re-spawn works
+        assert!(exit_code2 == 0 || exit_code2 == 0xC000013A);
+    }
+
     /// Full proxy end-to-end: spawn `cmd.exe /c echo hello` through the proxy
     /// and verify it runs without panicking or erroring.
     #[test]

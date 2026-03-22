@@ -19,6 +19,7 @@ interface Session {
   id: string;
   instance: TerminalInstance;
   tabEl: HTMLDivElement;
+  customName: boolean; // true if user renamed this tab
 }
 
 let sessions: Session[] = [];
@@ -47,6 +48,39 @@ function createTabElement(sessionId: string, index: number): HTMLDivElement {
     } else {
       switchToSession(sessionId);
     }
+  });
+
+  // Double-click label to rename
+  const label = tab.querySelector(".label")!;
+  label.addEventListener("dblclick", (e) => {
+    e.stopPropagation();
+    const labelEl = e.target as HTMLElement;
+    const session = sessions.find((s) => s.id === sessionId);
+    if (!session) return;
+
+    const input = document.createElement("input");
+    input.className = "tab-rename";
+    input.value = labelEl.textContent ?? "";
+    input.style.width = `${Math.max(labelEl.offsetWidth, 40)}px`;
+
+    const commit = () => {
+      const name = input.value.trim();
+      if (name) {
+        labelEl.textContent = name;
+        session.customName = true;
+      }
+      input.replaceWith(labelEl);
+    };
+
+    input.addEventListener("keydown", (ke) => {
+      if (ke.key === "Enter") commit();
+      if (ke.key === "Escape") input.replaceWith(labelEl);
+    });
+    input.addEventListener("blur", commit);
+
+    labelEl.replaceWith(input);
+    input.select();
+    input.focus();
   });
 
   return tab;
@@ -94,17 +128,15 @@ async function addSession(): Promise<void> {
   const tabEl = createTabElement(sessionId, sessions.length + 1);
   tabsEl.appendChild(tabEl);
 
-  const session: Session = { id: sessionId, instance, tabEl };
+  const session: Session = { id: sessionId, instance, tabEl, customName: false };
   sessions.push(session);
 
   // Wire IPC
   connectSession(sessionId, instance.terminal, defaultCommand);
 
-  // Wire resize — the window resize handler needs to fit the active terminal
-  // (handled globally below)
-
-  // Switch to this tab
+  // Switch to this tab and update tab bar visibility
   switchToSession(sessionId);
+  updateTabBarVisibility();
 }
 
 async function removeSession(sessionId: string): Promise<void> {
@@ -140,11 +172,29 @@ async function removeSession(sessionId: string): Promise<void> {
     }
   }
 
-  // Renumber tabs
+  // Renumber only auto-named tabs
   sessions.forEach((s, i) => {
-    const label = s.tabEl.querySelector(".label");
-    if (label) label.textContent = `Tab ${i + 1}`;
+    if (!s.customName) {
+      const label = s.tabEl.querySelector(".label");
+      if (label) label.textContent = `Tab ${i + 1}`;
+    }
   });
+
+  updateTabBarVisibility();
+}
+
+function updateTabBarVisibility(): void {
+  const tabBar = document.getElementById("tab-bar")!;
+  if (sessions.length <= 1) {
+    tabBar.classList.add("single-tab");
+  } else {
+    tabBar.classList.remove("single-tab");
+  }
+  // Re-fit the active terminal since tab bar height changed
+  const active = sessions.find((s) => s.id === activeSessionId);
+  if (active) {
+    active.instance.fitAddon.fit();
+  }
 }
 
 document.addEventListener("DOMContentLoaded", async () => {

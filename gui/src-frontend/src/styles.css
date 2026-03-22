@@ -24,6 +24,14 @@ body {
   user-select: none;
 }
 
+#tab-bar.single-tab #tabs {
+  visibility: hidden;
+}
+
+#tab-bar #tab-new {
+  margin-left: auto;
+}
+
 #tabs {
   display: flex;
   flex: 1;
@@ -54,6 +62,12 @@ body {
   background: #1e1e1e;
 }
 
+.tab .label {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .tab .close {
   margin-left: 8px;
   font-size: 14px;
@@ -69,6 +83,25 @@ body {
 
 .tab .close:hover {
   opacity: 1;
+}
+
+.tab-rename {
+  background: #3c3c3c;
+  color: #d4d4d4;
+  border: 1px solid #007acc;
+  outline: none;
+  font-family: system-ui, sans-serif;
+  font-size: 12px;
+  padding: 0 4px;
+  height: 22px;
+  min-width: 40px;
+  max-width: 200px;
+}
+
+body.light .tab-rename {
+  background: #fff;
+  color: #333;
+  border-color: #007acc;
 }
 
 #tab-new {
