@@ -291,6 +291,7 @@ fn main() {
     info!(version = env!("CARGO_PKG_VERSION"), "quell GUI starting");
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![

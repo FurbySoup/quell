@@ -2,6 +2,7 @@ import { Terminal, ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { open } from "@tauri-apps/plugin-shell";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import "@xterm/xterm/css/xterm.css";
 
@@ -119,6 +120,7 @@ export function createTerminal(
     fontSize: fontSize ?? 14,
     cursorBlink: true,
     scrollback: scrollback ?? 10000,
+    allowProposedApi: true,
     theme,
   });
 
@@ -237,7 +239,11 @@ export function createTerminal(
   terminal.loadAddon(unicode11Addon);
   terminal.unicode.activeVersion = "11";
 
-  terminal.loadAddon(new WebLinksAddon());
+  terminal.loadAddon(
+    new WebLinksAddon((_event, uri) => {
+      open(uri);
+    }),
+  );
 
   const fitAddon = new FitAddon();
   terminal.loadAddon(fitAddon);

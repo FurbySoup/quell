@@ -7,7 +7,7 @@ export interface Preferences {
 
 export const DEFAULTS: Preferences = {
   fontSize: 14,
-  themePref: "system",
+  themePref: "dark",
 };
 
 let store: Store | null = null;

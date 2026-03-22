@@ -137,6 +137,36 @@ body.light .tab-rename {
   display: block;
 }
 
+/* Terminal scrollbar — match dark background */
+.xterm-viewport::-webkit-scrollbar {
+  width: 10px;
+}
+
+.xterm-viewport::-webkit-scrollbar-track {
+  background: #1e1e1e;
+}
+
+.xterm-viewport::-webkit-scrollbar-thumb {
+  background: #424242;
+  border-radius: 0;
+}
+
+.xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+body.light .xterm-viewport::-webkit-scrollbar-track {
+  background: #ffffff;
+}
+
+body.light .xterm-viewport::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+}
+
+body.light .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: #a0a0a0;
+}
+
 /* Light theme overrides */
 body.light #tab-bar {
   background: #f3f3f3;
