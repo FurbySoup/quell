@@ -71,11 +71,18 @@ fn spawn_shell(
     rows: Option<i16>,
     session_id: Option<String>,
     cwd: Option<String>,
+    args: Option<String>,
 ) -> Result<String, String> {
     let session_id = session_id.unwrap_or_else(|| state.next_session_id());
 
     let config = AppConfig::load(&Default::default()).unwrap_or_default();
-    let command = config.default_command.clone();
+    let mut command = config.default_command.clone();
+    if let Some(ref extra) = args {
+        let trimmed = extra.trim();
+        if !trimmed.is_empty() {
+            command = format!("{command} {trimmed}");
+        }
+    }
     let cols = cols.unwrap_or(120);
     let rows = rows.unwrap_or(30);
 

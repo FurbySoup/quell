@@ -37,6 +37,7 @@ export function connectSession(
   sessionId: string,
   terminal: Terminal,
   cwd?: string,
+  args?: string,
 ): void {
   // Dispose previous handlers on this terminal (handles restart case)
   disposeTerminalHandlers(terminal);
@@ -58,8 +59,9 @@ export function connectSession(
           terminal.rows,
           sessionId,
           cwd,
+          args,
         );
-        connectSession(sessionId, terminal, cwd);
+        connectSession(sessionId, terminal, cwd, args);
       } catch (e) {
         terminal.writeln(`\r\n\x1b[31mFailed to restart: ${e}\x1b[0m`);
       }
@@ -119,6 +121,7 @@ export async function spawnSession(
   rows?: number,
   sessionId?: string,
   cwd?: string,
+  args?: string,
 ): Promise<string> {
   const onOutput = new Channel<ArrayBuffer>();
   onOutput.onmessage = (data) => {
@@ -131,6 +134,7 @@ export async function spawnSession(
     rows,
     sessionId,
     cwd,
+    args,
   });
 }
 

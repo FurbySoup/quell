@@ -44,6 +44,7 @@ interface Session {
   tabEl: HTMLDivElement;
   customName: boolean;
   cwd: string;
+  args: string;
 }
 
 let sessions: Session[] = [];
@@ -56,6 +57,7 @@ const MAX_FONT_SIZE = 32;
 const FONT_STEP = 2;
 let currentFontSize = DEFAULTS.fontSize;
 let currentThemePref: string = DEFAULTS.themePref;
+let currentArgs: string = DEFAULTS.defaultArgs;
 
 function getTabsEl(): HTMLElement {
   return document.getElementById("tabs")!;
@@ -273,6 +275,7 @@ async function addSession(cwd?: string): Promise<void> {
     instance.terminal.rows,
     sessionId,
     cwd,
+    currentArgs,
   );
 
   const tabEl = createTabElement(sessionId, sessions.length + 1);
@@ -284,10 +287,11 @@ async function addSession(cwd?: string): Promise<void> {
     tabEl,
     customName: false,
     cwd: cwd!,
+    args: currentArgs,
   };
   sessions.push(session);
 
-  connectSession(sessionId, instance.terminal, cwd);
+  connectSession(sessionId, instance.terminal, cwd, currentArgs);
 
   switchToSession(sessionId);
   updateTabBarVisibility();
@@ -416,6 +420,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const prefs = await loadPreferences();
   currentFontSize = prefs.fontSize;
   currentThemePref = prefs.themePref;
+  currentArgs = prefs.defaultArgs;
 
   // Set UI scale from persisted font size
   const scale = currentFontSize / DEFAULTS.fontSize;
@@ -546,6 +551,22 @@ document.addEventListener("DOMContentLoaded", async () => {
       shortcut: "Ctrl+Shift+F",
       category: "Search",
       execute: toggleSearch,
+    },
+    {
+      id: "toggle-skip-permissions",
+      label: currentArgs.includes("--dangerously-skip-permissions")
+        ? "Disable --dangerously-skip-permissions"
+        : "Enable --dangerously-skip-permissions",
+      category: "Session",
+      execute: () => {
+        const flag = "-- --dangerously-skip-permissions";
+        if (currentArgs.includes("--dangerously-skip-permissions")) {
+          currentArgs = currentArgs.replace(flag, "").trim();
+        } else {
+          currentArgs = currentArgs ? `${currentArgs} ${flag}` : flag;
+        }
+        savePreference("defaultArgs", currentArgs);
+      },
     },
     ...themeActions,
   ]);
