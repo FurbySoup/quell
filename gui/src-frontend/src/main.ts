@@ -554,13 +554,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     },
     {
       id: "toggle-skip-permissions",
-      label: currentArgs.includes("--dangerously-skip-permissions")
-        ? "Disable --dangerously-skip-permissions"
-        : "Enable --dangerously-skip-permissions",
+      label: () =>
+        currentArgs.includes("--dangerously-skip-permissions")
+          ? "Disable --dangerously-skip-permissions (currently active)"
+          : "Enable --dangerously-skip-permissions",
       category: "Session",
       execute: () => {
-        const flag = "-- --dangerously-skip-permissions";
-        if (currentArgs.includes("--dangerously-skip-permissions")) {
+        const flag = "--dangerously-skip-permissions";
+        if (currentArgs.includes(flag)) {
           currentArgs = currentArgs.replace(flag, "").trim();
         } else {
           currentArgs = currentArgs ? `${currentArgs} ${flag}` : flag;

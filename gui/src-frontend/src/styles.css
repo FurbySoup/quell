@@ -408,7 +408,7 @@ body {
 
 .palette-item .shortcut {
   color: var(--q-text-muted);
-  font-size: 11px;
+  font-size: calc(14px * var(--q-ui-scale));
   font-family: "Cascadia Code", "Consolas", monospace;
 }
 
@@ -419,7 +419,7 @@ body {
 
 .palette-item .category {
   color: var(--q-text-muted);
-  font-size: 11px;
+  font-size: calc(14px * var(--q-ui-scale));
   margin-right: 8px;
 }
 

@@ -1,6 +1,6 @@
 export interface PaletteAction {
   id: string;
-  label: string;
+  label: string | (() => string);
   shortcut?: string;
   category?: string;
   execute: () => void;
@@ -48,13 +48,16 @@ export function isPaletteOpen(): boolean {
   return isOpen;
 }
 
+function resolveLabel(action: PaletteAction): string {
+  return typeof action.label === "function" ? action.label() : action.label;
+}
+
 function fuzzyScore(query: string, label: string): number {
   if (!query) return 1;
   const q = query.toLowerCase();
   const l = label.toLowerCase();
   const idx = l.indexOf(q);
   if (idx === -1) return -1;
-  // Prefix match scores highest, then word boundary, then substring
   if (idx === 0) return 100;
   if (l[idx - 1] === " " || l[idx - 1] === ":") return 80;
   return 50;
@@ -65,7 +68,7 @@ function filterAndRender(query: string): void {
     filteredActions = [...actions];
   } else {
     filteredActions = actions
-      .map((a) => ({ action: a, score: fuzzyScore(query, a.label) }))
+      .map((a) => ({ action: a, score: fuzzyScore(query, resolveLabel(a)) }))
       .filter((r) => r.score > 0)
       .sort((a, b) => b.score - a.score)
       .map((r) => r.action);
@@ -91,7 +94,7 @@ function renderResults(): void {
       catSpan.textContent = action.category + ": ";
       labelSpan.appendChild(catSpan);
     }
-    labelSpan.appendChild(document.createTextNode(action.label));
+    labelSpan.appendChild(document.createTextNode(resolveLabel(action)));
     item.appendChild(labelSpan);
 
     if (action.shortcut) {
