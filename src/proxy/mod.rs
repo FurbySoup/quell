@@ -228,7 +228,7 @@ impl Proxy {
             .spawn(move || {
                 if let Some(input_rx) = external_input {
                     // GUI mode: read from external channel, write to ConPTY pipe
-                    run_channel_input_loop(input_write, input_flag, input_shutdown_tx, input_rx);
+                    run_channel_input_loop(input_write, input_flag, input_shutdown_tx, input_rx, tool);
                 } else {
                     let stdin_is_console = is_stdin_console();
                     debug!(stdin_is_console, "input thread mode selected");
@@ -607,13 +607,16 @@ fn run_channel_input_loop(
     flag: Arc<AtomicBool>,
     shutdown_tx: Sender<ShutdownReason>,
     input_rx: Receiver<Vec<u8>>,
+    tool: crate::config::ToolKind,
 ) {
+    let mut translator = crate::proxy::key_translator::KeyTranslator::new(tool);
     loop {
         if flag.load(Ordering::Relaxed) {
             break;
         }
         match input_rx.recv() {
             Ok(data) => {
+                let data = translator.translate(&data);
                 debug!(bytes = data.len(), "external input received");
                 if let Err(e) = input_write.write_all(&data) {
                     if !flag.load(Ordering::Relaxed) {

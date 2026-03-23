@@ -96,6 +96,15 @@ export function createTerminal(
 
   // Keyboard shortcut handler
   terminal.attachCustomKeyEventHandler((event: KeyboardEvent): boolean => {
+    // Shift+Enter must block ALL event types (keydown, keypress, keyup) to
+    // prevent xterm from sending \r on the keypress. Only emit on keydown.
+    if (event.shiftKey && event.key === "Enter") {
+      if (event.type === "keydown") {
+        terminal.input("\x1b[13;2u", true);
+      }
+      return false;
+    }
+
     if (event.type !== "keydown") {
       return true;
     }
