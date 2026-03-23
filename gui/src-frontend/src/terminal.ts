@@ -218,6 +218,32 @@ export function createTerminal(
   terminal.loadAddon(fitAddon);
   fitAddon.fit();
 
+  // Jump-to-bottom button — visible only when scrolled up
+  const jumpBtn = document.createElement("button");
+  jumpBtn.className = "jump-to-bottom";
+  jumpBtn.setAttribute("aria-label", "Jump to bottom");
+  jumpBtn.innerHTML = "&#x2193;"; // ↓
+  jumpBtn.addEventListener("click", () => {
+    terminal.scrollToBottom();
+    terminal.focus();
+  });
+  container.appendChild(jumpBtn);
+
+  const updateJumpButton = () => {
+    const buf = terminal.buffer.active;
+    const atBottom = buf.viewportY >= buf.baseY;
+    jumpBtn.classList.toggle("visible", !atBottom);
+  };
+
+  // onScroll fires for programmatic/buffer scrolls; the viewport's native
+  // scroll event catches mouse-wheel and scrollbar-drag interactions.
+  terminal.onScroll(updateJumpButton);
+  terminal.onWriteParsed(updateJumpButton);
+  const viewport = container.querySelector(".xterm-viewport");
+  if (viewport) {
+    viewport.addEventListener("scroll", updateJumpButton);
+  }
+
   return { terminal, fitAddon, searchAddon, container, sessionId };
 }
 
