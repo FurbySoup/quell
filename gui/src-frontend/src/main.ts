@@ -47,6 +47,9 @@ interface Session {
   cwd: string;
   args: string;
   exited: boolean;
+  streaming: boolean;
+  unread: boolean;
+  streamingTimer: ReturnType<typeof setTimeout> | null;
 }
 
 let sessions: Session[] = [];
@@ -61,6 +64,37 @@ let currentFontSize = DEFAULTS.fontSize;
 let currentThemePref: string = DEFAULTS.themePref;
 let currentArgs: string = DEFAULTS.defaultArgs;
 let spawning = false;
+
+// --- Activity indicators ---
+
+const STREAMING_TIMEOUT = 1500;
+
+function handleSessionOutput(sessionId: string): void {
+  const session = sessions.find((s) => s.id === sessionId);
+  if (!session) return;
+
+  session.streaming = true;
+  if (session.streamingTimer) clearTimeout(session.streamingTimer);
+  session.streamingTimer = setTimeout(() => {
+    session.streaming = false;
+    updateActivityIndicators(sessionId);
+  }, STREAMING_TIMEOUT);
+
+  if (sessionId !== activeSessionId) {
+    session.unread = true;
+  }
+
+  updateActivityIndicators(sessionId);
+}
+
+function updateActivityIndicators(sessionId: string): void {
+  const session = sessions.find((s) => s.id === sessionId);
+  if (!session) return;
+
+  session.tabEl.classList.toggle("streaming", session.streaming);
+  session.tabEl.classList.toggle("unread", session.unread && !session.streaming);
+  session.instance.container.classList.toggle("streaming", session.streaming);
+}
 
 function getTabsEl(): HTMLElement {
   return document.getElementById("tabs")!;
@@ -139,6 +173,8 @@ function switchToSession(sessionId: string): void {
 
   const target = sessions.find((s) => s.id === sessionId);
   if (target) {
+    target.unread = false;
+    target.tabEl.classList.remove("unread");
     activateTerminal(target.instance);
     target.tabEl.classList.add("active");
     activeSessionId = sessionId;
@@ -275,6 +311,8 @@ async function addSession(cwd?: string): Promise<void> {
     lastCwd = cwd;
     hideWelcome();
 
+    const outputCallback = () => handleSessionOutput(sessionId);
+
     try {
       await spawnSession(
         instance.terminal,
@@ -283,6 +321,7 @@ async function addSession(cwd?: string): Promise<void> {
         sessionId,
         cwd,
         currentArgs,
+        outputCallback,
       );
     } catch (e) {
       // Clean up orphaned DOM from the failed spawn
@@ -304,12 +343,18 @@ async function addSession(cwd?: string): Promise<void> {
       cwd: cwd!,
       args: currentArgs,
       exited: false,
+      streaming: false,
+      unread: false,
+      streamingTimer: null,
     };
     sessions.push(session);
 
     connectSession(sessionId, instance.terminal, cwd, currentArgs, () => {
       session.exited = true;
-    });
+      session.streaming = false;
+      if (session.streamingTimer) clearTimeout(session.streamingTimer);
+      updateActivityIndicators(sessionId);
+    }, outputCallback);
 
     switchToSession(sessionId);
     updateTabBarVisibility();
@@ -332,6 +377,7 @@ async function removeSession(sessionId: string): Promise<void> {
     if (!confirmed) return;
   }
 
+  if (session.streamingTimer) clearTimeout(session.streamingTimer);
   disconnectSession(sessionId, session.instance.terminal);
 
   try {

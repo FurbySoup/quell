@@ -231,17 +231,39 @@ export function createTerminal(
   const jumpBtn = document.createElement("button");
   jumpBtn.className = "jump-to-bottom";
   jumpBtn.setAttribute("aria-label", "Jump to bottom");
-  jumpBtn.innerHTML = "&#x2193;"; // ↓
+
+  const jumpArrow = document.createElement("span");
+  jumpArrow.className = "jump-arrow";
+  jumpArrow.innerHTML = "&#x2193;";
+  jumpBtn.appendChild(jumpArrow);
+
+  const jumpCount = document.createElement("span");
+  jumpCount.className = "jump-count";
+  jumpBtn.appendChild(jumpCount);
+
   jumpBtn.addEventListener("click", () => {
     terminal.scrollToBottom();
     terminal.focus();
   });
   container.appendChild(jumpBtn);
 
+  // Stream edge bar — 2px ambient indicator at bottom of terminal
+  const streamEdge = document.createElement("div");
+  streamEdge.className = "stream-edge-bar";
+  container.appendChild(streamEdge);
+
   const updateJumpButton = () => {
     const buf = terminal.buffer.active;
     const atBottom = buf.viewportY >= buf.baseY;
     jumpBtn.classList.toggle("visible", !atBottom);
+    container.classList.toggle("scrolled-up", !atBottom);
+
+    if (!atBottom) {
+      const linesBelow = buf.baseY - buf.viewportY;
+      jumpCount.textContent = linesBelow > 0 ? `+${linesBelow}` : "";
+    } else {
+      jumpCount.textContent = "";
+    }
   };
 
   // onScroll fires for programmatic/buffer scrolls; the viewport's native

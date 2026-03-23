@@ -39,6 +39,7 @@ export function connectSession(
   cwd?: string,
   args?: string,
   onExit?: () => void,
+  onOutput?: () => void,
 ): void {
   // Dispose previous handlers on this terminal (handles restart case)
   disposeTerminalHandlers(terminal);
@@ -63,8 +64,9 @@ export function connectSession(
             sessionId,
             cwd,
             args,
+            onOutput,
           );
-          connectSession(sessionId, terminal, cwd, args, onExit);
+          connectSession(sessionId, terminal, cwd, args, onExit, onOutput);
         } catch (e) {
           terminal.writeln(`\r\n\x1b[31m${friendlySpawnError(e)}\x1b[0m`);
           terminal.writeln(
@@ -141,14 +143,16 @@ export async function spawnSession(
   sessionId?: string,
   cwd?: string,
   args?: string,
+  onOutput?: () => void,
 ): Promise<string> {
-  const onOutput = new Channel<ArrayBuffer>();
-  onOutput.onmessage = (data) => {
+  const outputChannel = new Channel<ArrayBuffer>();
+  outputChannel.onmessage = (data) => {
     terminal.write(new Uint8Array(data));
+    onOutput?.();
   };
 
   return await invoke<string>("spawn_shell", {
-    onOutput,
+    onOutput: outputChannel,
     cols,
     rows,
     sessionId,

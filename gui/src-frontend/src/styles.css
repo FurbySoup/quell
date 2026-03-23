@@ -51,6 +51,26 @@ body {
   border-right: 1px solid var(--q-border);
   white-space: nowrap;
   -webkit-app-region: no-drag;
+  position: relative;
+}
+
+.tab::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: transparent;
+}
+
+.tab.streaming:not(.active)::after {
+  background: var(--q-accent);
+  animation: stream-slide 1.5s linear infinite;
+}
+
+.tab.unread:not(.active)::after {
+  background: var(--q-accent);
 }
 
 .tab:hover {
@@ -153,22 +173,26 @@ body {
 .jump-to-bottom {
   position: absolute;
   bottom: 16px;
-  right: 24px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 10;
-  width: 32px;
-  height: 32px;
+  min-width: 40px;
+  height: 36px;
+  padding: 0 12px;
   background: var(--q-bg-secondary);
   border: 1px solid var(--q-border);
   color: var(--q-text-muted);
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.15s;
+  overflow: hidden;
 }
 
 .jump-to-bottom.visible {
@@ -179,6 +203,41 @@ body {
 .jump-to-bottom:hover {
   color: var(--q-text);
   border-color: var(--q-accent);
+}
+
+.jump-count {
+  font-family: system-ui, sans-serif;
+  font-size: 11px;
+  color: var(--q-text-muted);
+}
+
+.jump-count:empty {
+  display: none;
+}
+
+/* Stream edge bar — ambient bottom indicator */
+.stream-edge-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  z-index: 5;
+  background: var(--q-accent);
+  transform: scaleX(0);
+  pointer-events: none;
+}
+
+.terminal-container.streaming.scrolled-up .stream-edge-bar {
+  animation: stream-slide 1.5s linear infinite;
+}
+
+/* Shared streaming animation */
+@keyframes stream-slide {
+  0%      { transform: scaleX(0); transform-origin: left; }
+  50%     { transform: scaleX(1); transform-origin: left; }
+  50.01%  { transform: scaleX(1); transform-origin: right; }
+  100%    { transform: scaleX(0); transform-origin: right; }
 }
 
 /* Welcome screen — terminal empty state */
