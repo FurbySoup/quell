@@ -2,6 +2,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { Terminal, IDisposable } from "@xterm/xterm";
 import { setPasteCallback, clearPasteCallback } from "./terminal";
+import { SyncBlockFilter } from "./sync-filter";
 
 /// Global exit event listener (initialized once, routes by session_id).
 /// Output uses per-session Channels instead of broadcast events.
@@ -37,7 +38,7 @@ export function connectSession(
   sessionId: string,
   terminal: Terminal,
   cwd?: string,
-  args?: string,
+  getArgs?: () => string,
   onExit?: () => void,
   onOutput?: () => void,
 ): void {
@@ -56,6 +57,7 @@ export function connectSession(
       const disposable = terminal.onData(async () => {
         disposable.dispose();
         terminal.reset();
+        const args = getArgs?.();
         try {
           await spawnSession(
             terminal,
@@ -66,7 +68,7 @@ export function connectSession(
             args,
             onOutput,
           );
-          connectSession(sessionId, terminal, cwd, args, onExit, onOutput);
+          connectSession(sessionId, terminal, cwd, getArgs, onExit, onOutput);
         } catch (e) {
           terminal.writeln(`\r\n\x1b[31m${friendlySpawnError(e)}\x1b[0m`);
           terminal.writeln(
@@ -145,9 +147,13 @@ export async function spawnSession(
   args?: string,
   onOutput?: () => void,
 ): Promise<string> {
+  const filter = new SyncBlockFilter();
   const outputChannel = new Channel<ArrayBuffer>();
   outputChannel.onmessage = (data) => {
-    terminal.write(new Uint8Array(data));
+    const filtered = filter.process(new Uint8Array(data));
+    if (filtered.length > 0) {
+      terminal.write(filtered);
+    }
     onOutput?.();
   };
 
@@ -175,5 +181,10 @@ function friendlySpawnError(raw: unknown): string {
   }
   if (msg.includes("no such session")) return "Session no longer exists.";
   if (msg.includes("input channel closed")) return "Session connection lost.";
+  // Validation errors from the backend — display as-is
+  if (msg.includes("Invalid argument")) return msg;
+  if (msg.includes("must be a local path")) return msg;
+  if (msg.includes("must be an absolute path")) return msg;
+  if (msg.includes("does not exist or is not a directory")) return msg;
   return `Restart failed: ${msg}`;
 }

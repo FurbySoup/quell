@@ -48,6 +48,10 @@ The proxy never responds to terminal query sequences (DA, DECRQSS, title report)
 
 The proxy does not execute commands or shell expansions from configuration values. Configuration is limited to declarative settings (numeric values, string identifiers, lists).
 
+### Spawn Parameter Validation (GUI)
+
+Extra arguments passed to the shell spawn command are validated to contain only CLI flags (tokens starting with `-`) free of shell metacharacters. Working directory paths are validated to be local, absolute, existing directories — UNC paths are rejected to prevent implicit NTLM credential leaks.
+
 ### Raw Mode Restoration
 
 The proxy saves and restores terminal mode on exit, including on panic. A crash cannot leave the terminal in an unusable state.
@@ -75,6 +79,7 @@ The proxy saves and restores terminal mode on exit, including on panic. A crash 
 | Modified binary distributed as the real tool | SHA256 checksums on releases, code signing (Phase 2) |
 | Malicious `.quell.toml` in a cloned repo | Warning on project-local config, no command execution from config |
 | Trace logging captures secrets to log file | Startup warning when trace enabled; default level captures metadata only |
+| GUI parameter injection via IPC | Spawn arguments validated (flags only, no metacharacters); CWD validated (local absolute directory only) |
 
 ## Vulnerability Reporting
 

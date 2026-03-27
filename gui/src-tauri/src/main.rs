@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod validate;
+
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::thread;
@@ -78,9 +80,9 @@ fn spawn_shell(
     let config = AppConfig::load(&Default::default()).unwrap_or_default();
     let mut command = config.default_command.clone();
     if let Some(ref extra) = args {
-        let trimmed = extra.trim();
-        if !trimmed.is_empty() {
-            command = format!("{command} {trimmed}");
+        let validated = validate::validate_args(extra)?;
+        if !validated.is_empty() {
+            command = format!("{command} {validated}");
         }
     }
     let cols = cols.unwrap_or(120);
@@ -88,6 +90,10 @@ fn spawn_shell(
 
     // Default CWD to user's home directory, not the app's working directory
     let cwd = cwd.or_else(|| std::env::var("USERPROFILE").ok());
+    let cwd = match cwd {
+        Some(ref path) => Some(validate::validate_cwd(path)?),
+        None => None,
+    };
 
     let tool = ToolKind::detect(&command);
     info!(session_id = %session_id, command = %command, cols, rows, tool = %tool, cwd = ?cwd, "spawning shell for GUI");

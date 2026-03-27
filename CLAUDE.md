@@ -204,3 +204,18 @@ The `windows` crate (0.59) wraps Win32 APIs differently from the `winapi` crate.
   - 3.1 Block-based output + session persistence
   - 3.2 Split panes + polish
   - 3.3 Community release (auto-update, installer, push guard removal)
+- **Phase 4:** Plugin marketplace — sandboxed plugin system, community marketplace, ecosystem growth.
+
+## Plugin Marketplace (Phase 4)
+
+Detailed research in `research/plugin-marketplace/INDEX.md`.
+
+**Format:** `.qpk` (ZIP) packages containing `manifest.json` + HTML/CSS/JS. Plugins run in sandboxed iframes with a `postMessage`-based SDK bridge. Permissions are explicit and shown at install time.
+
+**Mount points:** `panel-right`, `panel-bottom`, `tab`, `overlay`, `statusbar`, `decoration` (xterm.js layer), `background` (no UI).
+
+**Marketplace approach:** Phased — starts as a GitHub-based registry (no server infrastructure), graduates to web portal if scale demands it. Plugins hosted as GitHub Releases on author repos, registry is a JSON index in a central repo.
+
+**First-party plugin candidates:** AI Response Blocks (code block overlays), File Preview Panel, Git Dashboard, Diagram Renderer, Claude Voice (native integration of the claude-voice project), Terminal Multiplexer (split panes).
+
+**SDK gaps identified:** `terminal:onInput` event (needed for autocomplete), deep-link URI scheme support (needed for OAuth flows like Spotify).
