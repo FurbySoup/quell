@@ -3,6 +3,10 @@ export interface PaletteAction {
   label: string | (() => string);
   shortcut?: string;
   category?: string;
+  swatches?: string[];
+  icon?: { char: string; color: string } | (() => { char: string; color: string } | undefined);
+  preview?: () => void;
+  revertPreview?: () => void;
   execute: () => void;
 }
 
@@ -11,6 +15,9 @@ let isOpen = false;
 let selectedIndex = 0;
 let filteredActions: PaletteAction[] = [];
 let usingKeyboard = false;
+let lastPreviewedAction: PaletteAction | null = null;
+let previewTimer: ReturnType<typeof setTimeout> | null = null;
+const PREVIEW_DEBOUNCE_MS = 80;
 
 const overlayEl = () => document.getElementById("palette-overlay")!;
 const inputEl = () =>
@@ -26,14 +33,39 @@ export function openPalette(): void {
   selectedIndex = 0;
   const input = inputEl();
   input.value = "";
-  overlayEl().hidden = false;
+  const overlay = overlayEl();
+  const palette = overlay.querySelector(".palette") as HTMLElement;
+  palette.classList.remove("entering");
+  overlay.hidden = false;
+  // RAF ensures the browser has painted the visible-but-no-animation frame
+  // before we add the class that triggers the animation
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      palette.classList.add("entering");
+    });
+  });
   input.focus();
   filterAndRender("");
 }
 
 export function closePalette(): void {
+  if (previewTimer) {
+    clearTimeout(previewTimer);
+    previewTimer = null;
+  }
+  if (lastPreviewedAction?.revertPreview) {
+    lastPreviewedAction.revertPreview();
+  }
+  lastPreviewedAction = null;
   isOpen = false;
-  overlayEl().hidden = true;
+  const overlay = overlayEl();
+  const palette = overlay.querySelector(".palette") as HTMLElement;
+  palette.classList.remove("entering");
+  palette.classList.add("exiting");
+  palette.addEventListener("animationend", () => {
+    palette.classList.remove("exiting");
+    overlay.hidden = true;
+  }, { once: true });
 }
 
 export function togglePalette(): void {
@@ -82,13 +114,42 @@ function renderResults(): void {
   const container = resultsEl();
   container.innerHTML = "";
 
+  if (filteredActions.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "palette-empty";
+    empty.textContent = "No matching commands";
+    container.appendChild(empty);
+    return;
+  }
+
+  const query = inputEl().value;
+  const showHeaders = !query;
+  let lastCategory = "";
+
   for (let i = 0; i < filteredActions.length; i++) {
     const action = filteredActions[i];
+
+    if (showHeaders && action.category && action.category !== lastCategory) {
+      lastCategory = action.category;
+      const header = document.createElement("div");
+      header.className = "palette-category-header";
+      header.textContent = action.category;
+      container.appendChild(header);
+    }
+
     const item = document.createElement("div");
     item.className = "palette-item" + (i === selectedIndex ? " selected" : "");
 
+    // Active indicator — accent left border instead of inline checkmark
+    const resolvedIcon = typeof action.icon === "function" ? action.icon() : action.icon;
+    if (resolvedIcon) {
+      item.classList.add("active-indicator");
+      item.style.borderLeftColor = resolvedIcon.color;
+    }
+
+    // Label on the left
     const labelSpan = document.createElement("span");
-    if (action.category) {
+    if (!showHeaders && action.category) {
       const catSpan = document.createElement("span");
       catSpan.className = "category";
       catSpan.textContent = action.category + ": ";
@@ -97,14 +158,29 @@ function renderResults(): void {
     labelSpan.appendChild(document.createTextNode(resolveLabel(action)));
     item.appendChild(labelSpan);
 
+    // Right side: spacer pushes shortcut + swatches to the end
     if (action.shortcut) {
-      const shortcutSpan = document.createElement("span");
-      shortcutSpan.className = "shortcut";
-      shortcutSpan.textContent = action.shortcut;
-      item.appendChild(shortcutSpan);
+      const shortcutKbd = document.createElement("kbd");
+      shortcutKbd.className = "shortcut";
+      shortcutKbd.textContent = action.shortcut;
+      item.appendChild(shortcutKbd);
+    }
+
+    if (action.swatches && action.swatches.length > 0) {
+      const swatchContainer = document.createElement("span");
+      swatchContainer.className = "palette-swatches";
+      for (const color of action.swatches) {
+        const swatch = document.createElement("span");
+        swatch.className = "palette-swatch";
+        swatch.style.backgroundColor = color;
+        swatchContainer.appendChild(swatch);
+      }
+      item.appendChild(swatchContainer);
     }
 
     item.addEventListener("click", () => {
+      if (previewTimer) { clearTimeout(previewTimer); previewTimer = null; }
+      lastPreviewedAction = null;
       closePalette();
       action.execute();
     });
@@ -129,8 +205,17 @@ function updateSelection(): void {
   items.forEach((item, i) => {
     item.classList.toggle("selected", i === selectedIndex);
   });
-  // Scroll selected into view
   items[selectedIndex]?.scrollIntoView({ block: "nearest" });
+
+  // Debounced live preview
+  const action = filteredActions[selectedIndex];
+  if (action?.preview) {
+    if (previewTimer) clearTimeout(previewTimer);
+    previewTimer = setTimeout(() => {
+      action.preview!();
+      lastPreviewedAction = action;
+    }, PREVIEW_DEBOUNCE_MS);
+  }
 }
 
 export function initPaletteUI(): void {
@@ -175,6 +260,8 @@ export function initPaletteUI(): void {
     if (e.key === "Enter") {
       e.preventDefault();
       if (filteredActions[selectedIndex]) {
+        if (previewTimer) { clearTimeout(previewTimer); previewTimer = null; }
+        lastPreviewedAction = null;
         closePalette();
         filteredActions[selectedIndex].execute();
       }

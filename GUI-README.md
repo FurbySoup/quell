@@ -33,7 +33,7 @@ Both share the same Rust engine — the same ConPTY proxy, VT processing pipelin
 
 ### Themes
 
-14 built-in themes with full terminal + chrome coordination. Switch instantly via the command palette.
+14 built-in themes with full terminal + chrome coordination. Switch instantly via the command palette — color swatches show each theme's palette at a glance, and live preview lets you see every theme before committing.
 
 <!-- TODO: ![Theme gallery](assets/themes.png) -->
 
@@ -41,13 +41,13 @@ Quell Dark · Quell Light · High Contrast · Solarized Dark/Light · Monokai ·
 
 ### Search
 
-`Ctrl+Shift+F` — find text in the terminal buffer with regex, case-sensitive, and whole-word options. Navigate matches with `F3` / `Shift+F3`.
+`Ctrl+Shift+F` — find text in the terminal buffer with regex, case-sensitive, and whole-word options. Match highlighting adapts to the active theme. Navigate matches with `F3` / `Shift+F3`.
 
 <!-- TODO: ![Search](assets/search.png) -->
 
 ### Command Palette
 
-`Ctrl+Shift+P` — fuzzy search over every action. Switch themes, open tabs, adjust zoom, toggle search — all from the keyboard.
+`Ctrl+Shift+P` — fuzzy search over every action. Switch themes with live preview, open tabs, adjust zoom, toggle search — all from the keyboard. Active settings are marked with visual indicators so you always know the current state.
 
 <!-- TODO: ![Command palette](assets/palette.gif) -->
 
@@ -75,9 +75,10 @@ AI-generated output is untrusted. Quell classifies every VT escape sequence:
 |----------|--------|----------|
 | **Blocked** | Stripped entirely | Clipboard access (OSC 52), font queries, terminal device queries |
 | **Filtered** | Sanitized | Window titles (control chars stripped), hyperlinks (http/https only) |
+| **Validated** | Sanitized at trust boundary | Spawn arguments (flags only), working directory (local paths only) |
 | **Allowed** | Passed through | Cursor movement, colors, screen management, sync markers |
 
-Content Security Policy enabled. No `eval()`, no inline scripts. Command execution locked to config — the frontend cannot spawn arbitrary processes.
+Content Security Policy enabled. No `eval()`, no inline scripts. Spawn parameters are validated at the Rust trust boundary — the frontend cannot inject arbitrary commands or network paths.
 
 See [SECURITY.md](SECURITY.md) for the full threat model.
 
@@ -150,6 +151,8 @@ log_level = "info"
 ```
 
 The GUI app persists preferences (font size, theme) automatically. CLI flags override config file values — see `quell --help`.
+
+**Passing flags to AI tools:** The GUI validates extra arguments for security. Flags must use `=` for values (e.g. `--model=sonnet`), not spaces. Toggle `--dangerously-skip-permissions` via the command palette.
 
 ## Building from Source
 

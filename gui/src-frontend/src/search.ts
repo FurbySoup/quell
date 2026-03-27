@@ -1,4 +1,5 @@
 import type { SearchAddon } from "@xterm/addon-search";
+import type { QuellTheme } from "./themes";
 
 let currentAddon: SearchAddon | null = null;
 let searchQuery = "";
@@ -12,6 +13,30 @@ const decorations = {
   activeMatchColorOverviewRuler: "#f0c674",
 };
 
+let activeTheme: QuellTheme | null = null;
+
+export function setSearchTheme(theme: QuellTheme): void {
+  activeTheme = theme;
+}
+
+function getDecorations() {
+  if (!activeTheme) return decorations;
+  return {
+    matchBackground: activeTheme.chrome.highlight,
+    matchBorder: activeTheme.chrome.inputBorder,
+    matchOverviewRuler: activeTheme.chrome.highlight,
+    activeMatchBackground: activeTheme.chrome.highlight,
+    activeMatchBorder: activeTheme.chrome.accent,
+    activeMatchColorOverviewRuler: activeTheme.chrome.accent,
+  };
+}
+
+export function refreshDecorations(): void {
+  if (!isOpen || !currentAddon || !searchQuery || !isValidSearch()) return;
+  currentAddon.clearDecorations();
+  currentAddon.findNext(searchQuery, searchOpts(true));
+}
+
 const overlay = () => document.getElementById("search-overlay")!;
 const input = () => document.getElementById("search-input") as HTMLInputElement;
 const countEl = () => document.getElementById("search-count")!;
@@ -19,7 +44,7 @@ const countEl = () => document.getElementById("search-count")!;
 let isOpen = false;
 
 function searchOpts(incremental?: boolean) {
-  return { ...searchOptions, decorations, ...(incremental ? { incremental: true } : {}) };
+  return { ...searchOptions, decorations: getDecorations(), ...(incremental ? { incremental: true } : {}) };
 }
 
 function updateCount(found: boolean): void {

@@ -29,6 +29,8 @@ import {
 import {
   initSearchUI,
   setActiveSearchAddon,
+  setSearchTheme,
+  refreshDecorations,
   toggleSearch,
   findNext,
   findPrevious,
@@ -349,7 +351,7 @@ async function addSession(cwd?: string): Promise<void> {
     };
     sessions.push(session);
 
-    connectSession(sessionId, instance.terminal, cwd, currentArgs, () => {
+    connectSession(sessionId, instance.terminal, cwd, () => currentArgs, () => {
       session.exited = true;
       session.streaming = false;
       if (session.streamingTimer) clearTimeout(session.streamingTimer);
@@ -450,6 +452,20 @@ function applyTheme(themeName: string): void {
   for (const s of sessions) {
     s.instance.terminal.options.theme = xtermTheme;
   }
+  setSearchTheme(currentTheme);
+  refreshDecorations();
+}
+
+/** Apply theme visuals without updating saved state — used for palette live preview. */
+function previewTheme(themeName: string): void {
+  const theme = getThemeByName(themeName);
+  applyQuellTheme(theme);
+  const xtermTheme = toXtermTheme(theme);
+  for (const s of sessions) {
+    s.instance.terminal.options.theme = xtermTheme;
+  }
+  setSearchTheme(theme);
+  refreshDecorations();
 }
 
 function resolveThemeName(pref: string): string {
@@ -520,6 +536,50 @@ function closeShortcuts(): void {
 function removeActiveSession(): void {
   if (activeSessionId) {
     removeSession(activeSessionId);
+  }
+}
+
+/// Restart the active session in-place with new args (preserves tab position and name).
+async function restartActiveSession(newArgs: string): Promise<void> {
+  const session = sessions.find((s) => s.id === activeSessionId);
+  if (!session) return;
+
+  // Tear down the running session
+  disconnectSession(session.id, session.instance.terminal);
+  try {
+    await closeSession(session.id);
+  } catch {
+    // May have already exited
+  }
+
+  // Reset terminal and respawn with new args
+  session.instance.terminal.reset();
+  session.args = newArgs;
+  session.exited = false;
+  session.streaming = false;
+  if (session.streamingTimer) clearTimeout(session.streamingTimer);
+
+  const outputCallback = () => handleSessionOutput(session.id);
+
+  try {
+    await spawnSession(
+      session.instance.terminal,
+      session.instance.terminal.cols,
+      session.instance.terminal.rows,
+      session.id,
+      session.cwd,
+      newArgs,
+      outputCallback,
+    );
+    connectSession(session.id, session.instance.terminal, session.cwd, () => currentArgs, () => {
+      session.exited = true;
+      session.streaming = false;
+      if (session.streamingTimer) clearTimeout(session.streamingTimer);
+      updateActivityIndicators(session.id);
+    }, outputCallback);
+  } catch (e) {
+    session.instance.terminal.writeln(`\r\n\x1b[31m${String(e)}\x1b[0m`);
+    session.exited = true;
   }
 }
 
@@ -617,11 +677,21 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Register palette actions
   const themeActions = getAllThemes().map((t) => ({
     id: `theme-${t.name}`,
-    label: () =>
-      currentThemePref === t.name
-        ? `${t.displayName} (currently active)`
-        : t.displayName,
+    label: t.displayName,
     category: "Theme",
+    swatches: [
+      t.terminal.background,
+      t.chrome.accent,
+      t.terminal.red,
+      t.terminal.green,
+      t.terminal.blue,
+    ],
+    icon: () =>
+      currentThemePref === t.name
+        ? { char: "\u2713", color: t.chrome.accent }
+        : undefined,
+    preview: () => previewTheme(t.name),
+    revertPreview: () => previewTheme(resolveThemeName(currentThemePref)),
     execute: () => {
       applyTheme(t.name);
       savePreference("themePref", t.name);
@@ -694,17 +764,39 @@ document.addEventListener("DOMContentLoaded", async () => {
       id: "toggle-skip-permissions",
       label: () =>
         currentArgs.includes("--dangerously-skip-permissions")
-          ? "Disable --dangerously-skip-permissions (currently active)"
+          ? "Disable --dangerously-skip-permissions"
           : "Enable --dangerously-skip-permissions",
+      icon: () =>
+        currentArgs.includes("--dangerously-skip-permissions")
+          ? { char: "\u26a0", color: "#e0944a" }
+          : undefined,
       category: "Session",
-      execute: () => {
+      execute: async () => {
         const flag = "--dangerously-skip-permissions";
-        if (currentArgs.includes(flag)) {
-          currentArgs = currentArgs.replace(flag, "").trim();
-        } else {
-          currentArgs = currentArgs ? `${currentArgs} ${flag}` : flag;
+        const enabling = !currentArgs.includes(flag);
+        const newArgs = enabling
+          ? (currentArgs ? `${currentArgs} ${flag}` : flag)
+          : currentArgs.replace(flag, "").trim();
+
+        const hasActiveSession = sessions.some(
+          (s) => s.id === activeSessionId && !s.exited,
+        );
+
+        if (hasActiveSession) {
+          const action = enabling ? "enable" : "disable";
+          const confirmed = await confirm(
+            `This will ${action} --dangerously-skip-permissions and restart the active session. Continue?`,
+            { title: "Quell" },
+          );
+          if (!confirmed) return;
         }
+
+        currentArgs = newArgs;
         savePreference("defaultArgs", currentArgs);
+
+        if (hasActiveSession) {
+          await restartActiveSession(currentArgs);
+        }
       },
     },
     {
