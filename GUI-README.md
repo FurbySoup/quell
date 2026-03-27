@@ -182,8 +182,11 @@ cargo tauri build
 
 - **Phase 1: CLI proxy** — shipped, public
 - **Phase 2: GUI terminal** — tabs, copy/paste, session management, architecture hardening
-- **Phase 3: Public release** — search, 14 themes, command palette, security hardening, folder picker
-- **Next:** Block-based output, session persistence, split panes, community release
+- **Phase 3.0: First public release** — search, 14 themes with live preview, command palette with swatches and category grouping, security hardening, folder picker *(complete)*
+- **Phase 3.1:** Block-based output, session persistence
+- **Phase 3.2:** Split panes, polish
+- **Phase 3.3:** Community release — auto-update, installer, push guard removal
+- **Phase 4:** Plugin marketplace
 
 ## License
 
