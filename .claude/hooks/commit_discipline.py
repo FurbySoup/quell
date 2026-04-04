@@ -21,8 +21,8 @@ PROJECT_ROOT = os.path.normpath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')
 )
 
-# Paths that are Phase 2 — must not be pushed to public origin
-PHASE2_PATHS = ['gui/', 'src-tauri/', 'src-frontend/', 'package.json', 'tsconfig.json']
+# GUI released — push guard disabled
+PHASE2_PATHS = []
 
 
 def _diff_includes_phase2():

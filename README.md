@@ -1,92 +1,141 @@
-# quell
+# > Quell
 
 [![CI](https://github.com/FurbySoup/quell/actions/workflows/ci.yml/badge.svg)](https://github.com/FurbySoup/quell/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Windows](https://img.shields.io/badge/platform-Windows-0078D4?logo=windows)](https://github.com/FurbySoup/quell/releases)
 [![Rust](https://img.shields.io/badge/built%20with-Rust-dea584?logo=rust)](https://www.rust-lang.org/)
 
-**Windows-native terminal proxy that eliminates scroll-jumping for AI CLI tools.**
+**The terminal that makes Claude Code usable on Windows.**
 
-When Claude Code, Copilot CLI, or Gemini CLI stream long responses, your terminal's scroll position jumps to the top of the visible output on every update — making it impossible to read anything while new content arrives. quell sits between your terminal and the AI tool, keeping your scroll position stable.
+Quell is a standalone terminal built for AI CLI tools. It eliminates the scroll-jumping that makes Claude Code, Copilot CLI, and Gemini CLI unusable in standard terminals — and adds search, themes, tabs, and a command palette on top.
+
+![Quell terminal](assets/hero.png)
 
 ## The Problem
 
-Every AI CLI tool streams output through VT escape sequences. Terminals reset the scroll position to the top of the output on each update, causing constant scroll-jumping during long responses. This is the [#1 complaint](https://github.com/anthropics/claude-code/issues/1208) across AI CLI tools, with hundreds of upvotes across multiple issue trackers.
+Every AI CLI tool streams output through VT escape sequences. Windows terminals reset the scroll position on every update, causing constant scroll-jumping during long responses. This is the [#1 complaint](https://github.com/anthropics/claude-code/issues/1208) across AI CLI tools, with hundreds of upvotes across multiple issue trackers.
 
-## How It Works
+![Scroll stability](assets/scroll-stability.gif)
 
-```
-Your Terminal  <-->  quell (proxy)  <-->  ConPTY  <-->  AI CLI tool
-```
+## Two Products, One Engine
 
-quell intercepts the child process output via Windows ConPTY, processes VT escape sequences, filters dangerous sequences, and forwards clean output to your terminal. Your scroll position stays exactly where you left it.
+| | **Quell GUI** | **Quell CLI** |
+|---|---|---|
+| **What** | Standalone terminal application | Lightweight terminal proxy |
+| **For** | Everyone | Power users |
+| **Install** | Installer (.exe) | Portable binary |
+| **How** | Open → pick folder → go | `quell claude` in any terminal |
+| **Features** | Tabs, themes, search, palette, zoom | Scroll stability, security filtering |
 
-## Features
+Both share the same Rust engine — the same ConPTY proxy, VT processing pipeline, and security filtering.
 
-- **Scroll stability** — eliminates scroll-jumping and scrollback accumulation; read earlier output while new content streams in
-- **Shift+Enter support** — inserts newline in Claude Code via [Kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/) (Windows Terminal 1.25+)
-- **Security filtering** — blocks clipboard access (OSC 52), dangerous URL schemes (ssh://, javascript://), terminal query attacks, and C1 control characters
-- **Full Unicode** — emoji, CJK, box-drawing, mathematical symbols all render correctly
-- **Tool-agnostic** — works with Claude Code, Copilot CLI, Gemini CLI, or any terminal program
-- **Zero config** — just prefix your command with `quell`
-- **No network, no telemetry** — the binary makes zero network connections
+## GUI Features
 
-## Quick Start
+### Themes
+
+14 built-in themes with full terminal + chrome coordination. Switch instantly via the command palette — color swatches show each theme's palette at a glance, and live preview lets you see every theme before committing.
+
+![Theme gallery](assets/themes.png)
+
+Quell Dark · Quell Light · High Contrast · Solarized Dark/Light · Monokai · Nord · Dracula · Tokyo Night · Catppuccin Mocha · Gruvbox Dark · One Dark · Rosé Pine · CVD-Friendly
+
+### Search
+
+`Ctrl+Shift+F` — find text in the terminal buffer with regex, case-sensitive, and whole-word options. Match highlighting adapts to the active theme. Navigate matches with `F3` / `Shift+F3`.
+
+### Command Palette
+
+`Ctrl+Shift+P` — fuzzy search over every action. Switch themes with live preview, open tabs, adjust zoom, toggle search — all from the keyboard. Active settings are marked with visual indicators so you always know the current state.
+
+### Tabs
+
+Multiple sessions in one window. Each tab is an independent terminal session. `Ctrl+Tab` to cycle, `Ctrl+1-9` to jump directly, double-click to rename.
+
+### Zoom
+
+`Ctrl+=` / `Ctrl+-` / `Ctrl+0` — font size adjusts across the entire UI (terminal, tabs, search bar, palette). Persisted across restarts.
+
+### Project Folder Picker
+
+On launch, choose your project folder. New tabs inherit the directory. Switch projects via the palette with "New Tab (Choose Folder)".
+
+### Security
+
+AI-generated output is untrusted. Quell classifies every VT escape sequence:
+
+| Category | Action | Examples |
+|----------|--------|----------|
+| **Blocked** | Stripped entirely | Clipboard access (OSC 52), font queries, terminal device queries |
+| **Filtered** | Sanitized | Window titles (control chars stripped), hyperlinks (http/https only) |
+| **Validated** | Sanitized at trust boundary | Spawn arguments (flags only), working directory (local paths only) |
+| **Allowed** | Passed through | Cursor movement, colors, screen management, sync markers |
+
+Content Security Policy enabled. No `eval()`, no inline scripts. Spawn parameters are validated at the Rust trust boundary — the frontend cannot inject arbitrary commands or network paths.
+
+See [SECURITY.md](SECURITY.md) for the full threat model.
+
+## Quick Start — GUI
 
 ### Install
 
-1. Download `quell.exe` from [Releases](https://github.com/FurbySoup/quell/releases)
-2. Place it in a folder on your PATH (e.g. `C:\Users\YOU\.local\bin`)
-3. Open a new terminal and run:
+1. Download `Quell-x64-setup.exe` from [Releases](https://github.com/FurbySoup/quell/releases)
+2. Run the installer (no admin required — installs to your user profile)
+3. Launch Quell from the Start menu or desktop shortcut
+4. Pick your project folder → Claude Code starts
+
+> **SmartScreen warning:** Windows may show "Windows protected your PC" — click **More info** → **Run anyway**. This is standard for unsigned indie software.
+
+### Requirements
+
+- **Windows 10 21H2+** or **Windows 11** (WebView2 runtime — ships with modern Windows, installer downloads it if missing)
+- An AI CLI tool installed ([Claude Code](https://docs.anthropic.com/en/docs/claude-code), Copilot CLI, Gemini CLI, etc.)
+
+## Quick Start — CLI Proxy
+
+For power users who want scroll stability in their existing terminal without switching to a new app.
+
+### Install
+
+1. Download `quell-cli-x64.exe` from [Releases](https://github.com/FurbySoup/quell/releases)
+2. Rename to `quell.exe` and place in a folder on your PATH
+3. Run:
 
 ```bash
 quell claude
 ```
 
-That's it. quell shows a banner when it starts, launches Claude Code behind it, and keeps your scroll position stable.
-
 ### Usage
 
 ```bash
-# Run Claude Code through quell
-quell claude -- --dangerously-skip-permissions
-
-# Run any AI CLI tool
-quell gemini
-quell copilot
-
-# Explicit tool override (affects Shift+Enter behavior)
-quell --tool claude my-custom-claude-wrapper
-
-# Verbose output for troubleshooting
-quell --verbose claude
+quell claude                    # Run Claude Code through quell
+quell gemini                    # Any AI CLI tool works
+quell --tool claude my-wrapper  # Explicit tool override
+quell --verbose claude          # Debug output
 ```
 
-### Build from Source
+### Requirements
 
-Requires [Rust](https://rustup.rs/) (stable toolchain).
+- **Windows 10 1809+** (ConPTY support)
+- **Windows Terminal 1.25+** for Shift+Enter support (older terminals still work)
 
-```bash
-git clone https://github.com/FurbySoup/quell.git
-cd quell
-cargo build --release
-# Binary at target/release/quell.exe
-```
+## Keyboard Shortcuts
 
-### Troubleshooting
-
-**`quell claude` does nothing / not recognized**
-Your PATH points to the exe file itself instead of the folder containing it. `PATH` entries must be directories, not files. Move `quell.exe` into a directory that's already on your PATH, or add the directory (not the file) to PATH.
-
-**`failed to spawn process (0x80070002)`**
-The child command (`claude`, `gemini`, etc.) isn't on your PATH. Run `where claude` to check. If nothing is found, install the tool first.
-
-**Scroll still jumps**
-Make sure you're on the latest release. Run `quell --verbose claude` and check the debug output for clues. If the issue persists, [open an issue](https://github.com/FurbySoup/quell/issues) with the verbose log.
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+Shift+P` | Command palette |
+| `Ctrl+Shift+F` | Search in terminal |
+| `Ctrl+Shift+N` | New tab (same folder) |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab` | Cycle tabs |
+| `Ctrl+1-9` | Jump to tab |
+| `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | Zoom in / out / reset |
+| `F3` / `Shift+F3` | Next / previous search match |
+| `Ctrl+C` | Copy (with selection) / SIGINT (without) |
+| `Ctrl+V` | Paste |
+| `Ctrl+Shift+C` / `Ctrl+Shift+V` | Alternative copy / paste |
 
 ## Configuration
 
-quell works out of the box with no configuration. Optional settings can be placed in `%APPDATA%\quell\config.toml`:
+The CLI proxy accepts optional configuration in `%APPDATA%\quell\config.toml`:
 
 ```toml
 render_delay_ms = 5        # Normal output coalescing (ms)
@@ -96,37 +145,52 @@ log_level = "info"         # trace, debug, info, warn, error
 log_file = "C:\\logs\\quell.log"  # Optional — logs to stderr if omitted
 ```
 
-CLI flags override config file values. See `quell --help` for all options.
+The GUI app persists preferences (font size, theme) automatically. CLI flags override config file values — see `quell --help`.
 
-## Security
+## Troubleshooting — CLI Proxy
 
-AI-generated output is untrusted. quell classifies every VT escape sequence and blocks known attack vectors:
+**`quell claude` does nothing / not recognized**  
+Your PATH points to the exe file itself instead of the folder containing it. `PATH` entries must be directories, not files. Move `quell.exe` into a directory that's already on your PATH, or add the directory (not the file) to PATH.
 
-| Category | Action | Examples |
-|----------|--------|----------|
-| **Blocked** | Stripped entirely | Clipboard access (OSC 52), font queries (OSC 50), terminal device queries |
-| **Filtered** | Sanitized before forwarding | Window titles (control chars stripped), hyperlinks (URL scheme whitelist) |
-| **Allowed** | Passed through | Cursor movement, colors, screen management, sync markers |
+**`failed to spawn process (0x80070002)`**  
+The child command (`claude`, `gemini`, etc.) isn't on your PATH. Run `where claude` to check. If nothing is found, install the tool first.
 
-The URL scheme whitelist allows `http`, `https`, and `file` only — blocking schemes used in real CVEs ([CVE-2023-46321](https://nvd.nist.gov/vuln/detail/CVE-2023-46321), [CVE-2023-46322](https://nvd.nist.gov/vuln/detail/CVE-2023-46322)).
+**Scroll still jumps**  
+Make sure you're on the latest release. Run `quell --verbose claude` and check the debug output for clues. If the issue persists, [open an issue](https://github.com/FurbySoup/quell/issues) with the verbose log.
 
-See [SECURITY.md](SECURITY.md) for the full threat model.
+## Building from Source
 
-## Requirements
+Requires [Rust](https://rustup.rs/) (stable toolchain) and [Node.js](https://nodejs.org/) 18+ (for the GUI).
 
-- **Windows 10 1809+** (ConPTY support required)
-- **Windows Terminal 1.25+** for Shift+Enter support (older terminals still work, Alt+Enter remains available)
+```bash
+git clone https://github.com/FurbySoup/quell.git
+cd quell
+
+# CLI proxy only
+cargo build --release -p quell-cli
+# Binary at target/release/quell.exe
+
+# GUI app
+cd gui/src-frontend && npm install && cd ../src-tauri
+cargo tauri build
+# Installer at target/release/bundle/nsis/
+```
 
 ## Known Limitations
 
-- **Cursor-home viewport shift.** In some terminals, cursor-home sequences (`ESC[H`) during screen repaints can cause a minor viewport shift. This is caused by an [upstream Windows Terminal bug](https://github.com/microsoft/terminal/issues/14774) where `SetConsoleCursorPosition` always snaps the viewport to the cursor. Phase 2 (standalone terminal) will eliminate this entirely by controlling the rendering surface directly.
-- **Emoji picker (WIN+.)** and **IME input** may not work through quell. This is a ConPTY limitation. Workaround: copy-paste emoji via Ctrl+V.
+- **Resize during streaming** may cause brief visual artifacts from ConPTY's cursor-positioned redraw ([microsoft/terminal#14774](https://github.com/microsoft/terminal/issues/14774)). Content is not lost — artifacts clear on next output.
+- **Emoji picker (Win+.)** and **IME input** may not work through the proxy layer. Workaround: paste via `Ctrl+V`.
+- **Theme colors for child process output** — AI tools like Claude Code set their own ANSI colors, which override the terminal theme's palette for their UI elements. The terminal background, chrome, and default text colors always reflect the selected theme.
+- **Windows Voice Typing (Win+H)** works for short phrases but truncates long continuous sentences. Speak in natural shorter phrases for reliable results. Full voice input support is planned for a future release.
 
 ## Roadmap
 
-- **Phase 1: CLI proxy** — scroll stability, security filtering, Shift+Enter, startup banner, friendly errors, `--verbose` diagnostics
-- **Phase 2:** Standalone terminal (Tauri + xterm.js) with structured output, collapsible sections, tabs, accessibility
-- **Phase 3:** Session persistence, split panes, search, community release
+- **Phase 1: CLI proxy** — shipped *(scroll stability, security filtering, Shift+Enter, diagnostics)*
+- **Phase 2: GUI terminal** — shipped *(tabs, copy/paste, session management, architecture hardening)*
+- **Phase 3.0: First public release** — shipped *(search, 14 themes with live preview, command palette, security hardening, folder picker)*
+- **Phase 3.1:** Block-based output, session persistence
+- **Phase 3.2:** Split panes, polish
+- **Phase 4:** Plugin marketplace
 
 ## License
 

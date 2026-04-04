@@ -9,13 +9,13 @@
 
 Quell is a standalone terminal built for AI CLI tools. It eliminates the scroll-jumping that makes Claude Code, Copilot CLI, and Gemini CLI unusable in standard terminals — and adds search, themes, tabs, and a command palette on top.
 
-<!-- TODO: ![Quell screenshot](assets/hero.png) -->
+![Quell terminal](assets/hero.png)
 
 ## The Problem
 
 Every AI CLI tool streams output through VT escape sequences. Windows terminals reset the scroll position on every update, causing constant scroll-jumping during long responses. This is the [#1 complaint](https://github.com/anthropics/claude-code/issues/1208) across AI CLI tools, with hundreds of upvotes across multiple issue trackers.
 
-<!-- TODO: ![Scroll stability comparison](assets/scroll-stability.gif) -->
+![Scroll stability](assets/scroll-stability.gif)
 
 ## Two Products, One Engine
 
@@ -35,7 +35,7 @@ Both share the same Rust engine — the same ConPTY proxy, VT processing pipelin
 
 14 built-in themes with full terminal + chrome coordination. Switch instantly via the command palette — color swatches show each theme's palette at a glance, and live preview lets you see every theme before committing.
 
-<!-- TODO: ![Theme gallery](assets/themes.png) -->
+![Theme gallery](assets/themes.png)
 
 Quell Dark · Quell Light · High Contrast · Solarized Dark/Light · Monokai · Nord · Dracula · Tokyo Night · Catppuccin Mocha · Gruvbox Dark · One Dark · Rosé Pine · CVD-Friendly
 
@@ -43,13 +43,11 @@ Quell Dark · Quell Light · High Contrast · Solarized Dark/Light · Monokai ·
 
 `Ctrl+Shift+F` — find text in the terminal buffer with regex, case-sensitive, and whole-word options. Match highlighting adapts to the active theme. Navigate matches with `F3` / `Shift+F3`.
 
-<!-- TODO: ![Search](assets/search.png) -->
 
 ### Command Palette
 
 `Ctrl+Shift+P` — fuzzy search over every action. Switch themes with live preview, open tabs, adjust zoom, toggle search — all from the keyboard. Active settings are marked with visual indicators so you always know the current state.
 
-<!-- TODO: ![Command palette](assets/palette.gif) -->
 
 ### Tabs
 
