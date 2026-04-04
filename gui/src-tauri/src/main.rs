@@ -65,6 +65,7 @@ struct ChildExited {
 /// Spawn a shell process and wire it through the quell proxy.
 /// Returns the session_id for the new session.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 fn spawn_shell(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,

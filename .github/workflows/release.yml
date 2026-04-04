@@ -54,9 +54,9 @@ jobs:
           $cliHash = (Get-FileHash target/release/quell.exe -Algorithm SHA256).Hash
           "$cliHash  quell.exe" | Out-File -Encoding ascii -FilePath target/release/quell.exe.sha256
 
-          $installer = Get-ChildItem "gui/src-tauri/target/release/bundle/nsis/*.exe" | Select-Object -First 1
+          $installer = Get-ChildItem "target/release/bundle/nsis/*.exe" | Select-Object -First 1
           $installerHash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash
-          "$installerHash  $($installer.Name)" | Out-File -Encoding ascii -FilePath "gui/src-tauri/target/release/bundle/nsis/$($installer.BaseName).sha256"
+          "$installerHash  $($installer.Name)" | Out-File -Encoding ascii -FilePath "target/release/bundle/nsis/$($installer.BaseName).sha256"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -64,6 +64,6 @@ jobs:
           files: |
             target/release/quell.exe
             target/release/quell.exe.sha256
-            gui/src-tauri/target/release/bundle/nsis/*.exe
-            gui/src-tauri/target/release/bundle/nsis/*.sha256
+            target/release/bundle/nsis/*.exe
+            target/release/bundle/nsis/*.sha256
           generate_release_notes: true
