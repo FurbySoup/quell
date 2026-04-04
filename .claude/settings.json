@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "C:\\Python314\\python.exe \".claude/hooks/session_git_status.py\"",
+            "command": "python \"C:\\Users\\Mark\\Desktop\\Solo Dev Projects\\quell\\.claude\\hooks\\session_git_status.py\"",
             "timeout": 10
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "C:\\Python314\\python.exe \".claude/hooks/live_proving_reminder.py\"",
+            "command": "python \"C:\\Users\\Mark\\Desktop\\Solo Dev Projects\\quell\\.claude\\hooks\\live_proving_reminder.py\"",
             "timeout": 5
           },
           {
@@ -32,7 +32,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "C:\\Python314\\python.exe \".claude/hooks/planning_live_prove.py\"",
+            "command": "python \"C:\\Users\\Mark\\Desktop\\Solo Dev Projects\\quell\\.claude\\hooks\\planning_live_prove.py\"",
             "timeout": 5
           }
         ]
@@ -43,12 +43,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "C:\\Python314\\python.exe \".claude/hooks/systematic_debugging.py\"",
+            "command": "python \"C:\\Users\\Mark\\Desktop\\Solo Dev Projects\\quell\\.claude\\hooks\\systematic_debugging.py\"",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "C:\\Python314\\python.exe \".claude/hooks/push_reminder.py\"",
+            "command": "python \"C:\\Users\\Mark\\Desktop\\Solo Dev Projects\\quell\\.claude\\hooks\\push_reminder.py\"",
             "timeout": 5
           }
         ]
@@ -60,7 +60,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "C:\\Python314\\python.exe \".claude/hooks/branch_phase_check.py\"",
+            "command": "python \"C:\\Users\\Mark\\Desktop\\Solo Dev Projects\\quell\\.claude\\hooks\\branch_phase_check.py\"",
             "timeout": 10
           }
         ]
@@ -70,12 +70,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "C:\\Python314\\python.exe \".claude/hooks/pre_commit_gate.py\"",
+            "command": "python \"C:\\Users\\Mark\\Desktop\\Solo Dev Projects\\quell\\.claude\\hooks\\pre_commit_gate.py\"",
             "timeout": 180
           },
           {
             "type": "command",
-            "command": "C:\\Python314\\python.exe \".claude/hooks/commit_discipline.py\"",
+            "command": "python \"C:\\Users\\Mark\\Desktop\\Solo Dev Projects\\quell\\.claude\\hooks\\commit_discipline.py\"",
             "timeout": 5
           }
         ]
@@ -87,7 +87,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "C:\\Python314\\python.exe \".claude/hooks/gitignore_check.py\"",
+            "command": "python \"C:\\Users\\Mark\\Desktop\\Solo Dev Projects\\quell\\.claude\\hooks\\gitignore_check.py\"",
             "timeout": 5
           }
         ]
@@ -97,7 +97,7 @@
         "hooks": [
           {
             "type": "prompt",
-            "prompt": "An Agent subagent just completed. Check: were multiple agents launched in parallel to work on different files or features? If YES, remind the user (via systemMessage) that since agents developed in silo, they should audit the combined changes end-to-end for gaps or conflicts — stale references, mismatched interfaces, duplicate handlers, naming mismatches between frontend/backend, or captured closures with wrong values. If only one agent was used or the agents worked on completely independent concerns with no shared interfaces, no reminder is needed. Return JSON: {\"systemMessage\": \"...\"} with the reminder, or {} if not needed.",
+            "prompt": "An Agent subagent just completed. IMPORTANT: You MUST return valid JSON only. NEVER return a stopResponse — always allow the conversation to continue. Check the CURRENT message (not previous turns): were TWO OR MORE agents launched IN THE SAME MESSAGE to work on overlapping files or shared interfaces? If YES, return {\"systemMessage\": \"Multiple agents developed in silo — audit combined changes for gaps: stale references, mismatched interfaces, duplicate handlers, naming mismatches.\"}. In ALL other cases — single agent, sequential agents across turns, agents on independent concerns, plan mode exploration — return exactly: {}",
             "timeout": 15
           }
         ]

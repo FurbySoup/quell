@@ -59,10 +59,6 @@ Multiple sessions in one window. Each tab is an independent terminal session. `C
 
 `Ctrl+=` / `Ctrl+-` / `Ctrl+0` — font size adjusts across the entire UI (terminal, tabs, search bar, palette). Persisted across restarts.
 
-### Voice Input
-
-Right-click in the terminal and select **More tools → Voice typing** (or press `Win+H`) to activate Windows' built-in speech-to-text. Dictate commands, describe changes, or narrate prompts — directly into your AI CLI session. No extensions, no SaaS subscriptions.
-
 ### Project Folder Picker
 
 On launch, choose your project folder. New tabs inherit the directory. Switch projects via the palette with "New Tab (Choose Folder)".
@@ -152,7 +148,7 @@ log_level = "info"
 
 The GUI app persists preferences (font size, theme) automatically. CLI flags override config file values — see `quell --help`.
 
-**Passing flags to AI tools:** The GUI validates extra arguments for security. Flags must use `=` for values (e.g. `--model=sonnet`), not spaces. Toggle `--dangerously-skip-permissions` via the command palette.
+**Passing flags to AI tools:** The GUI validates extra arguments for security. Flags must use `=` for values (e.g. `--model=sonnet`), not spaces.
 
 ## Building from Source
 
@@ -177,6 +173,7 @@ cargo tauri build
 - **Resize during streaming** may cause brief visual artifacts from ConPTY's cursor-positioned redraw ([microsoft/terminal#14774](https://github.com/microsoft/terminal/issues/14774)). Content is not lost — artifacts clear on next output.
 - **Emoji picker (Win+.)** and **IME input** may not work through the proxy layer. Workaround: paste via `Ctrl+V`.
 - **Theme colors for child process output** — AI tools like Claude Code set their own ANSI colors, which override the terminal theme's palette for their UI elements. The terminal background, chrome, and default text colors always reflect the selected theme.
+- **Windows Voice Typing (Win+H)** works for short phrases but truncates long continuous sentences. Speak in natural shorter phrases for reliable results. Full voice input support is planned for a future release.
 
 ## Roadmap
 

@@ -12,6 +12,7 @@ Thumbs.db
 
 # Logs
 logs/
+*.log
 *.log.*
 scroll-debug*.log*
 hook_err.txt
@@ -26,6 +27,16 @@ testing-screenshots/
 *.exe
 *.dll
 *.pdb
+
+# Backup/original files
+*-orig.*
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Tauri auto-generated schemas
+gui/src-tauri/gen/
 
 # Environment
 .env

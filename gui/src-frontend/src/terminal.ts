@@ -78,6 +78,7 @@ export function createTerminal(
 
   terminal.open(container);
 
+
   const copySelection = () => {
     if (terminal.hasSelection()) {
       navigator.clipboard.writeText(terminal.getSelection());

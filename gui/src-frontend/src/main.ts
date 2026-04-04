@@ -47,7 +47,6 @@ interface Session {
   tabEl: HTMLDivElement;
   customName: boolean;
   cwd: string;
-  args: string;
   exited: boolean;
   streaming: boolean;
   unread: boolean;
@@ -64,7 +63,6 @@ const MAX_FONT_SIZE = 32;
 const FONT_STEP = 2;
 let currentFontSize = DEFAULTS.fontSize;
 let currentThemePref: string = DEFAULTS.themePref;
-let currentArgs: string = DEFAULTS.defaultArgs;
 let spawning = false;
 
 // --- Activity indicators ---
@@ -322,7 +320,7 @@ async function addSession(cwd?: string): Promise<void> {
         instance.terminal.rows,
         sessionId,
         cwd,
-        currentArgs,
+        undefined,
         outputCallback,
       );
     } catch (e) {
@@ -343,7 +341,6 @@ async function addSession(cwd?: string): Promise<void> {
       tabEl,
       customName: false,
       cwd: cwd!,
-      args: currentArgs,
       exited: false,
       streaming: false,
       unread: false,
@@ -351,7 +348,7 @@ async function addSession(cwd?: string): Promise<void> {
     };
     sessions.push(session);
 
-    connectSession(sessionId, instance.terminal, cwd, () => currentArgs, () => {
+    connectSession(sessionId, instance.terminal, cwd, undefined, () => {
       session.exited = true;
       session.streaming = false;
       if (session.streamingTimer) clearTimeout(session.streamingTimer);
@@ -516,7 +513,6 @@ function openShortcuts(): void {
     ["Ctrl+C", "Copy (with selection) / SIGINT"],
     ["Ctrl+V", "Paste"],
     ["Ctrl+Shift+C/V", "Alternative copy / paste"],
-    ["Win+H", "Voice typing"],
   ];
   for (const [key, desc] of shortcuts) {
     const kbd = document.createElement("kbd");
@@ -539,57 +535,12 @@ function removeActiveSession(): void {
   }
 }
 
-/// Restart the active session in-place with new args (preserves tab position and name).
-async function restartActiveSession(newArgs: string): Promise<void> {
-  const session = sessions.find((s) => s.id === activeSessionId);
-  if (!session) return;
-
-  // Tear down the running session
-  disconnectSession(session.id, session.instance.terminal);
-  try {
-    await closeSession(session.id);
-  } catch {
-    // May have already exited
-  }
-
-  // Reset terminal and respawn with new args
-  session.instance.terminal.reset();
-  session.args = newArgs;
-  session.exited = false;
-  session.streaming = false;
-  if (session.streamingTimer) clearTimeout(session.streamingTimer);
-
-  const outputCallback = () => handleSessionOutput(session.id);
-
-  try {
-    await spawnSession(
-      session.instance.terminal,
-      session.instance.terminal.cols,
-      session.instance.terminal.rows,
-      session.id,
-      session.cwd,
-      newArgs,
-      outputCallback,
-    );
-    connectSession(session.id, session.instance.terminal, session.cwd, () => currentArgs, () => {
-      session.exited = true;
-      session.streaming = false;
-      if (session.streamingTimer) clearTimeout(session.streamingTimer);
-      updateActivityIndicators(session.id);
-    }, outputCallback);
-  } catch (e) {
-    session.instance.terminal.writeln(`\r\n\x1b[31m${String(e)}\x1b[0m`);
-    session.exited = true;
-  }
-}
-
 // --- Initialization ---
 
 document.addEventListener("DOMContentLoaded", async () => {
   const prefs = await loadPreferences();
   currentFontSize = prefs.fontSize;
   currentThemePref = prefs.themePref;
-  currentArgs = prefs.defaultArgs;
 
   // Set UI scale from persisted font size
   const scale = currentFontSize / DEFAULTS.fontSize;
@@ -759,45 +710,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       shortcut: "Ctrl+Shift+F",
       category: "Search",
       execute: toggleSearch,
-    },
-    {
-      id: "toggle-skip-permissions",
-      label: () =>
-        currentArgs.includes("--dangerously-skip-permissions")
-          ? "Disable --dangerously-skip-permissions"
-          : "Enable --dangerously-skip-permissions",
-      icon: () =>
-        currentArgs.includes("--dangerously-skip-permissions")
-          ? { char: "\u26a0", color: "#e0944a" }
-          : undefined,
-      category: "Session",
-      execute: async () => {
-        const flag = "--dangerously-skip-permissions";
-        const enabling = !currentArgs.includes(flag);
-        const newArgs = enabling
-          ? (currentArgs ? `${currentArgs} ${flag}` : flag)
-          : currentArgs.replace(flag, "").trim();
-
-        const hasActiveSession = sessions.some(
-          (s) => s.id === activeSessionId && !s.exited,
-        );
-
-        if (hasActiveSession) {
-          const action = enabling ? "enable" : "disable";
-          const confirmed = await confirm(
-            `This will ${action} --dangerously-skip-permissions and restart the active session. Continue?`,
-            { title: "Quell" },
-          );
-          if (!confirmed) return;
-        }
-
-        currentArgs = newArgs;
-        savePreference("defaultArgs", currentArgs);
-
-        if (hasActiveSession) {
-          await restartActiveSession(currentArgs);
-        }
-      },
     },
     {
       id: "keyboard-shortcuts",

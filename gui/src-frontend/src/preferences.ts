@@ -3,13 +3,11 @@ import { Store } from "@tauri-apps/plugin-store";
 export interface Preferences {
   fontSize: number;
   themePref: string; // "system" or a theme name like "quell-dark"
-  defaultArgs: string; // appended to the default command, e.g. "-- --dangerously-skip-permissions"
 }
 
 export const DEFAULTS: Preferences = {
   fontSize: 14,
   themePref: "quell-dark",
-  defaultArgs: "",
 };
 
 let store: Store | null = null;
@@ -29,8 +27,6 @@ export async function loadPreferences(): Promise<Preferences> {
       themePref:
         (await s.get<Preferences["themePref"]>("themePref")) ??
         DEFAULTS.themePref,
-      defaultArgs:
-        (await s.get<string>("defaultArgs")) ?? DEFAULTS.defaultArgs,
     };
   } catch {
     return { ...DEFAULTS };
