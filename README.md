@@ -9,7 +9,7 @@
 
 Quell is a standalone terminal built for AI CLI tools. It eliminates the scroll-jumping that makes Claude Code, Copilot CLI, and Gemini CLI unusable in standard terminals — and adds search, themes, tabs, and a command palette on top.
 
-![Quell terminal](assets/hero.png)
+![Quell terminal](assets/hero.jpg)
 
 ## The Problem
 
@@ -28,51 +28,6 @@ Every AI CLI tool streams output through VT escape sequences. Windows terminals 
 | **Features** | Tabs, themes, search, palette, zoom | Scroll stability, security filtering |
 
 Both share the same Rust engine — the same ConPTY proxy, VT processing pipeline, and security filtering.
-
-## GUI Features
-
-### Themes
-
-14 built-in themes with full terminal + chrome coordination. Switch instantly via the command palette — color swatches show each theme's palette at a glance, and live preview lets you see every theme before committing.
-
-![Theme gallery](assets/themes.png)
-
-Quell Dark · Quell Light · High Contrast · Solarized Dark/Light · Monokai · Nord · Dracula · Tokyo Night · Catppuccin Mocha · Gruvbox Dark · One Dark · Rosé Pine · CVD-Friendly
-
-### Search
-
-`Ctrl+Shift+F` — find text in the terminal buffer with regex, case-sensitive, and whole-word options. Match highlighting adapts to the active theme. Navigate matches with `F3` / `Shift+F3`.
-
-### Command Palette
-
-`Ctrl+Shift+P` — fuzzy search over every action. Switch themes with live preview, open tabs, adjust zoom, toggle search — all from the keyboard. Active settings are marked with visual indicators so you always know the current state.
-
-### Tabs
-
-Multiple sessions in one window. Each tab is an independent terminal session. `Ctrl+Tab` to cycle, `Ctrl+1-9` to jump directly, double-click to rename.
-
-### Zoom
-
-`Ctrl+=` / `Ctrl+-` / `Ctrl+0` — font size adjusts across the entire UI (terminal, tabs, search bar, palette). Persisted across restarts.
-
-### Project Folder Picker
-
-On launch, choose your project folder. New tabs inherit the directory. Switch projects via the palette with "New Tab (Choose Folder)".
-
-### Security
-
-AI-generated output is untrusted. Quell classifies every VT escape sequence:
-
-| Category | Action | Examples |
-|----------|--------|----------|
-| **Blocked** | Stripped entirely | Clipboard access (OSC 52), font queries, terminal device queries |
-| **Filtered** | Sanitized | Window titles (control chars stripped), hyperlinks (http/https only) |
-| **Validated** | Sanitized at trust boundary | Spawn arguments (flags only), working directory (local paths only) |
-| **Allowed** | Passed through | Cursor movement, colors, screen management, sync markers |
-
-Content Security Policy enabled. No `eval()`, no inline scripts. Spawn parameters are validated at the Rust trust boundary — the frontend cannot inject arbitrary commands or network paths.
-
-See [SECURITY.md](SECURITY.md) for the full threat model.
 
 ## Quick Start — GUI
 
@@ -118,7 +73,49 @@ quell --verbose claude          # Debug output
 - **Windows 10 1809+** (ConPTY support)
 - **Windows Terminal 1.25+** for Shift+Enter support (older terminals still work)
 
-## Keyboard Shortcuts
+## GUI Features
+
+### Themes
+
+14 built-in themes with full terminal + chrome coordination. Switch instantly via the command palette — color swatches show each theme's palette at a glance, and live preview lets you see every theme before committing.
+
+![Theme gallery](assets/themes.png)
+
+Quell Dark · Quell Light · High Contrast · Solarized Dark/Light · Monokai · Nord · Dracula · Tokyo Night · Catppuccin Mocha · Gruvbox Dark · One Dark · Rosé Pine · CVD-Friendly
+
+### Search
+
+`Ctrl+Shift+F` — find text in the terminal buffer with regex, case-sensitive, and whole-word options. Match highlighting adapts to the active theme. Navigate matches with `F3` / `Shift+F3`.
+
+![Search](assets/search.png)
+
+### Command Palette
+
+`Ctrl+Shift+P` — fuzzy search over every action. Switch themes with live preview, open tabs, adjust zoom, toggle search — all from the keyboard. Active settings are marked with visual indicators so you always know the current state.
+
+![Command palette](assets/command-palette.png)
+
+### Tabs
+
+Multiple sessions in one window. Each tab is an independent terminal session. `Ctrl+Tab` to cycle, `Ctrl+1-9` to jump directly, double-click to rename.
+
+![Tabs](assets/tabs.png)
+
+### Progress Indicators & Jump to Bottom
+
+A live streaming indicator appears at the bottom of the terminal while Claude Code is actively generating output. When you scroll up to review earlier output, a jump-to-bottom button appears showing how many lines are below — click it to snap back instantly.
+
+![Progress indicators and jump to bottom](assets/progress-indicators.png)
+
+### Zoom
+
+`Ctrl+=` / `Ctrl+-` / `Ctrl+0` — font size adjusts across the entire UI (terminal, tabs, search bar, palette). Persisted across restarts.
+
+### Project Folder Picker
+
+On launch, choose your project folder. New tabs inherit the directory. Switch projects via the palette with "New Tab (Choose Folder)".
+
+### Keyboard Shortcuts
 
 | Shortcut | Action |
 |----------|--------|
@@ -132,6 +129,39 @@ quell --verbose claude          # Debug output
 | `Ctrl+C` | Copy (with selection) / SIGINT (without) |
 | `Ctrl+V` | Paste |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | Alternative copy / paste |
+
+### Security
+
+AI-generated output is untrusted. Quell classifies every VT escape sequence:
+
+| Category | Action | Examples |
+|----------|--------|----------|
+| **Blocked** | Stripped entirely | Clipboard access (OSC 52), font queries, terminal device queries |
+| **Filtered** | Sanitized | Window titles (control chars stripped), hyperlinks (http/https only) |
+| **Validated** | Sanitized at trust boundary | Spawn arguments (flags only), working directory (local paths only) |
+| **Allowed** | Passed through | Cursor movement, colors, screen management, sync markers |
+
+Content Security Policy enabled. No `eval()`, no inline scripts. Spawn parameters are validated at the Rust trust boundary — the frontend cannot inject arbitrary commands or network paths.
+
+See [SECURITY.md](SECURITY.md) for the full threat model.
+
+## Building from Source
+
+Requires [Rust](https://rustup.rs/) (stable toolchain) and [Node.js](https://nodejs.org/) 18+ (for the GUI).
+
+```bash
+git clone https://github.com/FurbySoup/quell.git
+cd quell
+
+# CLI proxy only
+cargo build --release -p quell-cli
+# Binary at target/release/quell.exe
+
+# GUI app
+cd gui/src-frontend && npm install && cd ../src-tauri
+cargo tauri build
+# Installer at target/release/bundle/nsis/
+```
 
 ## Configuration
 
@@ -158,24 +188,6 @@ The child command (`claude`, `gemini`, etc.) isn't on your PATH. Run `where clau
 **Scroll still jumps**  
 Make sure you're on the latest release. Run `quell --verbose claude` and check the debug output for clues. If the issue persists, [open an issue](https://github.com/FurbySoup/quell/issues) with the verbose log.
 
-## Building from Source
-
-Requires [Rust](https://rustup.rs/) (stable toolchain) and [Node.js](https://nodejs.org/) 18+ (for the GUI).
-
-```bash
-git clone https://github.com/FurbySoup/quell.git
-cd quell
-
-# CLI proxy only
-cargo build --release -p quell-cli
-# Binary at target/release/quell.exe
-
-# GUI app
-cd gui/src-frontend && npm install && cd ../src-tauri
-cargo tauri build
-# Installer at target/release/bundle/nsis/
-```
-
 ## Known Limitations
 
 - **Resize during streaming** may cause brief visual artifacts from ConPTY's cursor-positioned redraw ([microsoft/terminal#14774](https://github.com/microsoft/terminal/issues/14774)). Content is not lost — artifacts clear on next output.
@@ -192,6 +204,10 @@ cargo tauri build
 - **Phase 3.2:** Split panes, polish
 - **Phase 3.3:** Community release — auto-update, code signing, package manifests
 - **Phase 4:** Plugin marketplace
+
+## Getting Help
+
+Found a bug or something not working as expected? [Open an issue on GitHub](https://github.com/FurbySoup/quell/issues) — include your Windows version, what you were doing, and any error messages or verbose logs (`quell --verbose claude` for CLI, or F12 devtools console for the GUI).
 
 ## License
 

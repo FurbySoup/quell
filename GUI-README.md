@@ -9,7 +9,7 @@
 
 Quell is a standalone terminal built for AI CLI tools. It eliminates the scroll-jumping that makes Claude Code, Copilot CLI, and Gemini CLI unusable in standard terminals — and adds search, themes, tabs, and a command palette on top.
 
-![Quell terminal](assets/hero.png)
+![Quell terminal](assets/hero.jpg)
 
 ## The Problem
 
