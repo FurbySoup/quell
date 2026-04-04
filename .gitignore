@@ -44,6 +44,11 @@ gui/src-tauri/gen/
 
 # Claude Code worktrees (temporary agent workspaces)
 .claude/worktrees/
+# Claude Code local settings (contains machine-specific absolute paths)
+.claude/settings.local.json
+
+# Working/source brand assets (not needed in public repo)
+quell-brand-hero.jpg
 
 # Phase 2 GUI (Node/frontend)
 node_modules/

@@ -78,7 +78,7 @@ See [SECURITY.md](SECURITY.md) for the full threat model.
 
 ### Install
 
-1. Download `Quell-x64-setup.exe` from [Releases](https://github.com/FurbySoup/quell/releases)
+1. Download `Quell_0.2.0_x64-setup.exe` from [Releases](https://github.com/FurbySoup/quell/releases)
 2. Run the installer (no admin required — installs to your user profile)
 3. Launch Quell from the Start menu or desktop shortcut
 4. Pick your project folder → Claude Code starts
@@ -190,6 +190,7 @@ cargo tauri build
 - **Phase 3.0: First public release** — shipped *(search, 14 themes with live preview, command palette, security hardening, folder picker)*
 - **Phase 3.1:** Block-based output, session persistence
 - **Phase 3.2:** Split panes, polish
+- **Phase 3.3:** Community release — auto-update, code signing, package manifests
 - **Phase 4:** Plugin marketplace
 
 ## License

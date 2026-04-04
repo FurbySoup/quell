@@ -39,7 +39,7 @@ jobs:
         run: npm ci
 
       - name: Install tauri-cli
-        run: cargo install tauri-cli --version "^2" --locked
+        run: cargo install tauri-cli --version "^2"
 
       - name: Build CLI binary
         run: cargo build --release -p quell-cli
