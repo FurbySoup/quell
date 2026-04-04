@@ -382,9 +382,6 @@ impl Proxy {
             }
         }
 
-        // Let the sink clean up (StdoutSink disables Kitty keyboard protocol)
-        self.sink.on_shutdown();
-
         // Finalize recording if active
         #[cfg(feature = "recording")]
         if let Some(rec) = self.recorder.take()
@@ -431,6 +428,13 @@ impl Proxy {
         // Wait for the output thread — it should exit quickly after pipe EOF
         info!("waiting for output thread");
         let _ = output_thread.join();
+
+        // Reset terminal input modes AFTER the output thread has drained all
+        // remaining ConPTY bytes. This ordering guarantees our reset is the
+        // last thing written to the parent terminal — preventing a race where
+        // the child's cleanup output (e.g. a win32 input mode re-enable)
+        // arrives after our disable and leaves the terminal in a broken state.
+        self.sink.on_shutdown();
 
         // The input thread is NOT joined — on Windows, ReadConsoleInputW on a
         // console handle can block even after WaitForMultipleObjects signals.

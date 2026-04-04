@@ -60,11 +60,11 @@ impl OutputSink for StdoutSink {
     }
 
     fn on_shutdown(&self) {
-        use super::key_translator::KITTY_DISABLE;
-        if let Err(e) = raw_write_all(self.handle(), KITTY_DISABLE) {
-            warn!(error = %e, "failed to send Kitty protocol disable");
+        use super::key_translator::TERMINAL_INPUT_RESET;
+        if let Err(e) = raw_write_all(self.handle(), TERMINAL_INPUT_RESET) {
+            warn!(error = %e, "failed to send terminal input mode reset");
         } else {
-            info!("Kitty keyboard protocol disabled");
+            info!("terminal input modes reset");
         }
     }
 }

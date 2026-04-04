@@ -19,6 +19,18 @@ pub const KITTY_ENABLE: &[u8] = b"\x1b[>1u";
 /// Restores original keyboard mode.
 pub const KITTY_DISABLE: &[u8] = b"\x1b[<u";
 
+/// Comprehensive input mode reset sent at proxy shutdown.
+///
+/// Covers every input mode the child process may have enabled via ConPTY.
+/// ConPTY is known to swallow some disable sequences (e.g. `?9001l`) when the
+/// child exits, leaving the parent terminal in a mode where keypresses are
+/// encoded as structured sequences (e.g. `;28;13;1;0;1_` for Enter in Win32
+/// input mode) that the parent shell cannot interpret.
+///
+/// Safe to emit unconditionally — terminals silently ignore disables for modes
+/// that are not currently active.
+pub const TERMINAL_INPUT_RESET: &[u8] = b"\x1b[<u\x1b[?9001l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?2004l";
+
 /// Translates Kitty keyboard protocol sequences to tool-specific byte sequences.
 pub struct KeyTranslator {
     tool: ToolKind,
