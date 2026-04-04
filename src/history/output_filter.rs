@@ -32,6 +32,7 @@ pub struct OutputFilter {
     osc50_stripped: u64,
     c1_bytes_stripped: u64,
     clear_screen_stripped: u64,
+    cuu_stripped: u64,
     queries_stripped: u64,
     titles_sanitized: u64,
     links_stripped: u64,
@@ -71,6 +72,7 @@ impl OutputFilter {
             osc50_stripped: 0,
             c1_bytes_stripped: 0,
             clear_screen_stripped: 0,
+            cuu_stripped: 0,
             queries_stripped: 0,
             titles_sanitized: 0,
             links_stripped: 0,
@@ -288,6 +290,17 @@ impl OutputFilter {
                 );
                 false
             }
+            // CUU — cursor up N lines. Ink's eraseLines() emits unbounded
+            // cursor-up on every re-render. Outside sync blocks these cause
+            // xterm.js to implicitly shift viewportY, snapping the viewport.
+            // Inside sync blocks the render is atomic so cursor movement is safe.
+            b'A' if !self.in_sync_block => {
+                self.cuu_stripped += 1;
+                if self.cuu_stripped <= 5 {
+                    debug!(count = self.cuu_stripped, params = ?params, "stripping cursor-up outside sync block");
+                }
+                true
+            }
             _ => false,
         }
     }
@@ -427,6 +440,7 @@ impl OutputFilter {
             osc52_stripped: self.osc52_stripped,
             osc50_stripped: self.osc50_stripped,
             c1_bytes_stripped: self.c1_bytes_stripped,
+            cuu_stripped: self.cuu_stripped,
             queries_stripped: self.queries_stripped,
             titles_sanitized: self.titles_sanitized,
             links_stripped: self.links_stripped,
@@ -440,6 +454,7 @@ pub struct OutputFilterMetrics {
     pub osc52_stripped: u64,
     pub osc50_stripped: u64,
     pub c1_bytes_stripped: u64,
+    pub cuu_stripped: u64,
     pub queries_stripped: u64,
     pub titles_sanitized: u64,
     pub links_stripped: u64,
@@ -465,10 +480,59 @@ mod tests {
     #[test]
     fn test_cursor_movement_passes_through() {
         let mut f = OutputFilter::new();
-        // CUP, CUU, CUD, CUF, CUB
+        // CUP, CUD, CUF, CUB pass through — only CUU is stripped outside sync blocks
         assert_eq!(f.filter(b"\x1b[10;20H"), b"\x1b[10;20H");
-        assert_eq!(f.filter(b"\x1b[5A"), b"\x1b[5A");
+        assert_eq!(f.filter(b"\x1b[5A"), b""); // CUU stripped outside sync block
         assert_eq!(f.filter(b"\x1b[3B"), b"\x1b[3B");
+    }
+
+    #[test]
+    fn test_cursor_up_stripped_outside_sync() {
+        let mut f = OutputFilter::new();
+        // Exhaust startup grace so we're in normal filtering mode
+        f.filter(b"\x1b[2J");
+        f.filter(b"\x1b[2J");
+        assert_eq!(f.filter(b"before\x1b[3Aafter"), b"beforeafter");
+        assert_eq!(f.metrics().cuu_stripped, 1);
+    }
+
+    #[test]
+    fn test_cursor_up_variants_stripped() {
+        let mut f = OutputFilter::new();
+        f.filter(b"\x1b[2J");
+        f.filter(b"\x1b[2J");
+        assert_eq!(f.filter(b"\x1b[A"), b"");   // bare ESC[A (implicit up 1)
+        assert_eq!(f.filter(b"\x1b[1A"), b"");  // ESC[1A
+        assert_eq!(f.filter(b"\x1b[10A"), b""); // ESC[10A (up 10)
+        assert_eq!(f.metrics().cuu_stripped, 3);
+    }
+
+    #[test]
+    fn test_cursor_up_allowed_inside_sync_block() {
+        let mut f = OutputFilter::new();
+        f.filter(b"\x1b[2J");
+        f.filter(b"\x1b[2J");
+        // Inside BSU/ESU, cursor-up must pass through for atomic Ink redraws
+        let input = b"\x1b[?2026h\x1b[3AContent\x1b[?2026l";
+        let out = f.filter(input);
+        assert!(
+            memchr::memmem::find(out, b"\x1b[3A").is_some(),
+            "cursor-up inside sync block must pass through"
+        );
+        assert_eq!(f.metrics().cuu_stripped, 0);
+    }
+
+    #[test]
+    fn test_cursor_up_at_chunk_boundary() {
+        // ESC split across two filter() calls
+        let mut f = OutputFilter::new();
+        f.filter(b"\x1b[2J");
+        f.filter(b"\x1b[2J");
+        let r1 = f.filter(b"text\x1b").to_vec();
+        let r2 = f.filter(b"[5Amore").to_vec();
+        let combined = [r1, r2].concat();
+        assert_eq!(combined, b"textmore");
+        assert_eq!(f.metrics().cuu_stripped, 1);
     }
 
     #[test]
