@@ -65,6 +65,10 @@ let currentFontSize = DEFAULTS.fontSize;
 let currentThemePref: string = DEFAULTS.themePref;
 let spawning = false;
 
+// Window focus state — used by spawnSession() for scroll anchor awareness.
+// Declared at module level so addSession() (module-level) can close over it.
+let windowFocused = true;
+
 // --- Activity indicators ---
 
 const STREAMING_TIMEOUT = 1500;
@@ -322,6 +326,7 @@ async function addSession(cwd?: string): Promise<void> {
         cwd,
         undefined,
         outputCallback,
+        () => windowFocused,
       );
     } catch (e) {
       // Clean up orphaned DOM from the failed spawn
@@ -566,6 +571,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     }
   });
+
+  // Wire up window focus tracking — variable declared at module level
+  window.addEventListener("blur", () => { windowFocused = false; });
+  window.addEventListener("focus", () => { windowFocused = true; });
 
   // Shortcuts reference overlay — dismiss with Escape or backdrop click
   const shortcutsOverlay = document.getElementById("shortcuts-overlay")!;

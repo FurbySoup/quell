@@ -138,6 +138,11 @@ export function disconnectSession(
 /// Spawn a terminal session with a per-session output Channel.
 /// The Channel delivers raw bytes directly as ArrayBuffer — no base64 encoding.
 /// The backend reads the command from config — frontend cannot specify it.
+///
+/// _isWindowFocused: optional getter returning whether the app window is focused.
+/// Reserved for future focus-aware anchor behaviour (e.g. locking at-bottom while blurred).
+/// Currently the scroll anchor activates on scrolledUp alone; focus state is tracked in
+/// main.ts and passed here so the signature is stable when that behaviour is added.
 export async function spawnSession(
   terminal: Terminal,
   cols?: number,
@@ -146,13 +151,29 @@ export async function spawnSession(
   cwd?: string,
   args?: string,
   onOutput?: () => void,
+  _isWindowFocused?: () => boolean,
 ): Promise<string> {
   const filter = new SyncBlockFilter();
   const outputChannel = new Channel<ArrayBuffer>();
   outputChannel.onmessage = (data) => {
     const filtered = filter.process(new Uint8Array(data));
     if (filtered.length > 0) {
-      terminal.write(filtered);
+      const buf = terminal.buffer.active;
+      const scrolledUp = buf.viewportY < buf.baseY;
+      // When the user has scrolled up (or window is blurred while scrolled up),
+      // save viewportY before the write and restore it if xterm.js shifts it.
+      // This prevents implicit viewport movement from reflows or any sequence
+      // that slips through the Rust-layer filter.
+      if (scrolledUp) {
+        const savedY = buf.viewportY;
+        terminal.write(filtered, () => {
+          if (terminal.buffer.active.viewportY !== savedY) {
+            terminal.scrollToLine(savedY);
+          }
+        });
+      } else {
+        terminal.write(filtered);
+      }
     }
     onOutput?.();
   };

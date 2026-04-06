@@ -3213,7 +3213,7 @@ dependencies = [
 
 [[package]]
 name = "quell"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -3252,7 +3252,7 @@ dependencies = [
 
 [[package]]
 name = "quell-gui"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
