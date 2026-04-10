@@ -97,9 +97,20 @@ cargo clippy --lib --features recording  # With recording — no warnings
 
 1. Create/update tasks for the feature
 2. Implement with tracing at decision points
-3. Write unit tests (happy path + edge cases) and integration tests if I/O-touching
-4. Commit — pre-commit hook enforces `cargo test` + `cargo clippy`
-5. Live-prove — hooks prompt for automated/automatable/manual categorization
+3. **Integration audit** — for every `export function`/`pub fn`, verify external call sites exist. For every `listen()`/resource acquisition, verify cleanup exists. For every `invoke()`, verify the Rust command is registered.
+4. Write unit tests (happy path + edge cases) and integration tests if I/O-touching
+5. Commit — pre-commit hook enforces `cargo test` + `cargo clippy`, integration_audit hook checks wiring
+6. Live-prove — hooks prompt for automated/automatable/manual categorization
+
+## Planning Conventions
+
+When planning multi-chunk features, each chunk specification must include:
+- **Exports:** What functions/types this chunk creates for other modules to use
+- **Wiring:** What call sites in OTHER modules must be added (not just "modify main.ts" but "call X() in Y()")
+- **Cleanup:** For every activate/create/listen, specify the corresponding deactivate/destroy/unlisten
+- **Trust boundaries:** Any function receiving external data (postMessage, IPC, user input) must validate argument shape
+
+Plan by data flow, not just by component. "Build sdk-bridge.ts" is a component plan. "Theme changes propagate to plugins" is a data flow plan. Both are needed.
 
 ## Live-Proving Standard
 
@@ -127,6 +138,7 @@ These fire automatically — no manual action needed:
 | `session_git_status.py` | SessionStart | Injects repo state (unpushed commits, stale branches) as context |
 | `push_reminder.py` | Stop | Warns about unpushed commits when Claude finishes responding |
 | `commit_discipline.py` | PreToolUse (Bash) | Blocks pushing Phase 2 files to public origin, force push, and reset --hard |
+| `integration_audit.py` | PostToolUse (Bash) | After git commit, checks for exported functions with no call sites and TS invoke() without matching Rust commands |
 
 ## Key Dependencies
 
