@@ -83,7 +83,7 @@ jobs:
         run: cargo install cargo-audit
 
       - name: Install cargo-deny
-        run: cargo install cargo-deny
+        run: cargo install cargo-deny --version 0.19.0
 
       - name: Audit dependencies
         run: cargo audit
