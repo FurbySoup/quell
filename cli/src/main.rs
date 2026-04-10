@@ -100,15 +100,12 @@ fn main() -> Result<()> {
     let child_command = cli.command.clone().unwrap_or_else(|| "claude".to_string());
     let child_args: Vec<String> = cli.args.clone();
 
-    // Build full command line
-    let command_line = if child_args.is_empty() {
-        child_command.clone()
-    } else {
-        format!("{} {}", child_command, child_args.join(" "))
-    };
+    // Build full command line, wrapping .cmd/.bat shims in cmd.exe /c
+    let command_line = resolve_command_line(&child_command, &child_args);
 
-    // Detect AI tool: CLI flag overrides auto-detection from command
-    let tool = cli.tool.unwrap_or_else(|| config::ToolKind::detect(&command_line));
+    // Detect AI tool from the original command name, not the wrapped command line
+    // (cmd.exe /c claude would fail to detect "claude")
+    let tool = cli.tool.unwrap_or_else(|| config::ToolKind::detect(&child_command));
     info!(
         command = %command_line,
         tool = %tool,
@@ -212,6 +209,79 @@ fn print_banner(command: &str) {
     eprintln!(" \u{2517}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{251b}");
 }
 
+/// Resolve a command name to a full command line, wrapping .cmd/.bat shims
+/// in `cmd.exe /c` so CreateProcessW can execute them.
+///
+/// On Windows, npm installs create .cmd batch shims (e.g. `claude.cmd`).
+/// CreateProcessW cannot directly execute batch files — only .exe binaries.
+fn resolve_command_line(command: &str, args: &[String]) -> String {
+    let base = command.split_whitespace().next().unwrap_or(command);
+
+    // Only resolve bare command names — skip if user gave a path or extension
+    let needs_resolution = !base.contains('\\')
+        && !base.contains('/')
+        && !base.to_lowercase().ends_with(".exe")
+        && !base.to_lowercase().ends_with(".cmd")
+        && !base.to_lowercase().ends_with(".bat");
+
+    if needs_resolution
+        && let Some(resolved) = resolve_via_where(base)
+    {
+        let lower = resolved.to_lowercase();
+        if lower.ends_with(".cmd") || lower.ends_with(".bat") {
+            let inner = std::iter::once(command)
+                .chain(args.iter().map(|s| s.as_str()))
+                .collect::<Vec<_>>()
+                .join(" ");
+            warn!(
+                command,
+                resolved_path = %resolved,
+                "command resolved to a .cmd/.bat shim — wrapping in cmd.exe /c"
+            );
+            return format!("cmd.exe /c {inner}");
+        }
+    }
+
+    if args.is_empty() {
+        command.to_string()
+    } else {
+        format!("{} {}", command, args.join(" "))
+    }
+}
+
+/// Use `where.exe` to find the best match for a command on PATH.
+///
+/// npm creates both an extensionless shim and a `.cmd` shim for global packages.
+/// `where.exe` may return the extensionless file first, which `CreateProcessW`
+/// can't execute. We scan all results and prefer `.exe` > `.cmd`/`.bat` > first result.
+fn resolve_via_where(command: &str) -> Option<String> {
+    let output = std::process::Command::new("where")
+        .arg(command)
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let paths: Vec<&str> = stdout.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+
+    // Prefer .exe (native binary), then .cmd/.bat (batch shim)
+    if let Some(exe) = paths.iter().find(|p| p.to_lowercase().ends_with(".exe")) {
+        return Some(exe.to_string());
+    }
+    if let Some(cmd) = paths.iter().find(|p| {
+        let l = p.to_lowercase();
+        l.ends_with(".cmd") || l.ends_with(".bat")
+    }) {
+        return Some(cmd.to_string());
+    }
+
+    // Fallback to first result (extensionless or unknown)
+    paths.first().map(|s| s.to_string())
+}
+
 /// Print a friendly error message for known Windows spawn failures.
 fn print_friendly_spawn_error(command: &str, error: &anyhow::Error) -> bool {
     for cause in error.chain() {
@@ -222,6 +292,10 @@ fn print_friendly_spawn_error(command: &str, error: &anyhow::Error) -> bool {
                     eprintln!("error: '{command}' not found.");
                     eprintln!("  Make sure it's installed and on your PATH.");
                     eprintln!("  Run 'where {command}' to check.");
+                    eprintln!();
+                    eprintln!("  If 'where' shows a .cmd file (e.g. npm-installed tools),");
+                    eprintln!("  this is a bug — please report it at:");
+                    eprintln!("  https://github.com/FurbySoup/quell/issues");
                     return true;
                 }
                 0x80070005 => {
@@ -307,5 +381,90 @@ fn init_logging(cli: &Cli) -> Result<Option<tracing_appender::non_blocking::Work
             .init();
 
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_resolve_bare_exe_passthrough() {
+        // cargo.exe exists on every Rust dev machine — should NOT wrap in cmd.exe
+        let result = resolve_command_line("cargo", &["--version".to_string()]);
+        assert!(
+            !result.starts_with("cmd.exe"),
+            "cargo resolves to .exe, should not wrap: {result}"
+        );
+        assert!(result.contains("cargo"));
+        assert!(result.contains("--version"));
+    }
+
+    #[test]
+    fn test_resolve_explicit_exe_extension_skips_where() {
+        // If user passes an .exe extension, skip resolution entirely
+        let result = resolve_command_line("cargo.exe", &["build".to_string()]);
+        assert_eq!(result, "cargo.exe build");
+    }
+
+    #[test]
+    fn test_resolve_explicit_cmd_extension_skips_where() {
+        // If user explicitly passes .cmd, don't double-resolve
+        let result = resolve_command_line("something.cmd", &[]);
+        assert_eq!(result, "something.cmd");
+    }
+
+    #[test]
+    fn test_resolve_explicit_bat_extension_skips_where() {
+        let result = resolve_command_line("something.bat", &["arg1".to_string()]);
+        assert_eq!(result, "something.bat arg1");
+    }
+
+    #[test]
+    fn test_resolve_full_path_skips_where() {
+        // Backslash path — should skip resolution
+        let result = resolve_command_line(r"C:\tools\mytool", &[]);
+        assert_eq!(result, r"C:\tools\mytool");
+    }
+
+    #[test]
+    fn test_resolve_forward_slash_path_skips_where() {
+        let result = resolve_command_line("C:/tools/mytool", &[]);
+        assert_eq!(result, "C:/tools/mytool");
+    }
+
+    #[test]
+    fn test_resolve_nonexistent_command_passthrough() {
+        // A command that doesn't exist on PATH should pass through unchanged
+        let result = resolve_command_line("nonexistent_quell_test_command_xyz", &["--flag".to_string()]);
+        assert_eq!(result, "nonexistent_quell_test_command_xyz --flag");
+    }
+
+    #[test]
+    fn test_resolve_no_args() {
+        let result = resolve_command_line("cargo", &[]);
+        assert!(
+            !result.starts_with("cmd.exe"),
+            "cargo should not wrap: {result}"
+        );
+        assert_eq!(result, "cargo");
+    }
+
+    #[test]
+    fn test_resolve_via_where_finds_cargo() {
+        // cargo should always be findable on a Rust dev machine
+        let result = resolve_via_where("cargo");
+        assert!(result.is_some(), "where cargo should succeed");
+        let path = result.unwrap();
+        assert!(
+            path.to_lowercase().ends_with(".exe"),
+            "cargo should resolve to .exe: {path}"
+        );
+    }
+
+    #[test]
+    fn test_resolve_via_where_nonexistent() {
+        let result = resolve_via_where("nonexistent_quell_test_command_xyz");
+        assert!(result.is_none());
     }
 }
